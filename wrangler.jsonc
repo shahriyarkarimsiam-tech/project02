@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "merge-streak-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_id": "5fd01e5a-f606-4955-b533-470355de0025",
       "migrations_dir": "migrations"
     }
   ],
