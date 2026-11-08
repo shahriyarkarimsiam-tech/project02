@@ -1,0 +1,18 @@
+{
+  "name": "merge-streak-tma",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Free-to-play Telegram arcade puzzle with daily challenge, profiles and virtual cosmetic shop",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "preview": "python3 -m http.server 8080 --directory public",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply merge-streak-db --local",
+    "db:remote": "wrangler d1 migrations apply merge-streak-db --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local wrangler development, never commit actual credentials.
+BOT_TOKEN=PUT_TELEGRAM_BOT_TOKEN_HERE
+SESSION_SECRET=PUT_A_RANDOM_64_CHARACTER_SECRET_HERE
+ADMIN_TELEGRAM_ID=PUT_YOUR_TELEGRAM_NUMERIC_ID_HERE
