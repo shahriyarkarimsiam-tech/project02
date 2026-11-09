@@ -13,12 +13,23 @@ let player=emptyPlayer(), online=false, view='home', rankMode='classic', current
 let state=null, moves=[], currentRun=null, completed=false, busy=false, toastTimer, leaderCache={classic:[],daily:[]};
 let activeRuns=[], recentGames=[], daily={date:dateUTC(),started:false,completed:false,score:null};
 
+let authToken = null;
+try { authToken = sessionStorage.getItem('ms_auth_token'); } catch {}
+
 function read(key, fallback=null){ try { return JSON.parse(localStorage.getItem(key))??fallback; } catch { return fallback; } }
 function write(key,val){ try { localStorage.setItem(key,JSON.stringify(val)); } catch {} }
 function erase(key){ try { localStorage.removeItem(key); } catch {} }
 function toast(message){ $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,3300); }
 async function api(path, options={}) {
-  const response=await fetch(`/api${path}`,{method:options.method||'GET',credentials:'same-origin',headers:options.body?{'content-type':'application/json'}:{},body:options.body?JSON.stringify(options.body):undefined});
+  const headers = { ...(options.headers || {}) };
+  if (options.body) headers['content-type'] = 'application/json';
+  if (authToken) headers['authorization'] = `Bearer ${authToken}`;
+  const response = await fetch(`/api${path}`, {
+    method: options.method || 'GET',
+    credentials: 'include',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
   let result={}; try { result=await response.json(); } catch {}
   if(!response.ok) throw new Error(result.error||`Request failed (${response.status})`);
   return result;
@@ -256,11 +267,24 @@ async function refreshLeaderboard(){
 async function authenticate(){
   if(!tg?.initData)return false;
   try{
-    await api('/auth/telegram',{method:'POST',body:{initData:tg.initData}});
-    const data=await api('/me');online=true;player={...emptyPlayer(),...data.player};
-    activeRuns=data.activeRuns||[];recentGames=data.recentGames||[];daily=data.daily||daily;applyTheme(player.equippedTheme);
+    const res = await api('/auth/telegram', { method: 'POST', body: { initData: tg.initData } });
+    if (res?.token) {
+      authToken = res.token;
+      try { sessionStorage.setItem('ms_auth_token', authToken); } catch {}
+    }
+    const data = await api('/me');
+    online = true;
+    player = { ...emptyPlayer(), ...data.player };
+    activeRuns = data.activeRuns || [];
+    recentGames = data.recentGames || [];
+    daily = data.daily || daily;
+    applyTheme(player.equippedTheme);
     return true;
-  }catch{toast('Telegram sign-in unavailable. Practice mode is still playable.');return false;}
+  }catch(err){
+    console.warn('Telegram auth error:', err);
+    toast('Telegram sign-in unavailable. Practice mode is still playable.');
+    return false;
+  }
 }
 async function boot(){
   try{tg?.ready?.();tg?.expand?.();}catch{}

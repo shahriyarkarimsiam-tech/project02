@@ -9,8 +9,15 @@ const fail = (status, message) => json({ error: message }, status);
 const now = () => Math.floor(Date.now() / 1000);
 const todayUTC = () => new Date().toISOString().slice(0, 10);
 function originAllowed(request) { const origin = request.headers.get('origin'); return !origin || origin === new URL(request.url).origin; }
-function sameSiteCookie(value) { return `ms_session=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`; }
-async function getUser(request, env) { return verifySession(getCookie(request, 'ms_session'), env.SESSION_SECRET); }
+function sameSiteCookie(value) { return `ms_session=${value}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned; Max-Age=604800`; }
+async function getUser(request, env) {
+  const authHeader = request.headers.get('authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const verified = await verifySession(authHeader.slice(7).trim(), env.SESSION_SECRET);
+    if (verified) return verified;
+  }
+  return verifySession(getCookie(request, 'ms_session'), env.SESSION_SECRET);
+}
 async function bodyJSON(request) {
   if (!String(request.headers.get('content-type') || '').startsWith('application/json')) throw new Error('JSON required');
   if (Number(request.headers.get('content-length') || 0) > 20000) throw new Error('Request too large');
@@ -46,11 +53,51 @@ async function userProfile(env, uid) {
   if (!player) return null;
   return { player: { ...player, streak: currentStreak((days.results||[]).map(d=>d.day)), ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)] }, activeRuns: active.results||[], recentGames: recent.results||[], daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null } };
 }
+async function handleTelegramWebhook(request, env) {
+  if (!env.BOT_TOKEN) return json({ ok: false, error: 'No bot token' });
+  try {
+    const update = await request.json();
+    const message = update?.message || update?.edited_message;
+    if (!message || !message.chat?.id) return json({ ok: true });
+    const chatId = message.chat.id;
+    const firstName = message.from?.first_name || 'Player';
+    const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
+
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nMerge matching numbers, beat your high scores, complete daily challenges, and earn virtual coins to unlock custom cosmetic themes!\n\n👇 Tap below to start playing:`,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '▶️ Play Merge Streak', web_app: { url: appUrl } }
+            ],
+            [
+              { text: '⚡ Daily Challenge', web_app: { url: appUrl } }
+            ]
+          ]
+        }
+      })
+    });
+  } catch (err) {
+    console.error('Webhook error:', err);
+  }
+  return json({ ok: true });
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
   if (method === 'OPTIONS') return fail(405, 'Not supported');
+
+  if (method === 'POST' && path === '/api/telegram/webhook') {
+    return handleTelegramWebhook(request, env);
+  }
+
   if (method !== 'GET' && !originAllowed(request)) return fail(403, 'Invalid request origin');
   if (method === 'GET' && path === '/api/health') return json({ ok:true, version:'0.2.0', adsEnabled:false, withdrawalsEnabled:false });
 
@@ -65,7 +112,7 @@ async function route(request, env) {
       .bind(person.id,safeName(person),person.username,stamp,stamp).run();
     await env.DB.prepare('INSERT OR IGNORE INTO player_days(player_id,day) VALUES (?,?)').bind(person.id,todayUTC()).run();
     const signed = await mintSession(person.id, env.SESSION_SECRET);
-    return json({ ok:true },200,{ 'set-cookie':sameSiteCookie(signed) });
+    return json({ ok:true, token: signed }, 200, { 'set-cookie':sameSiteCookie(signed) });
   }
   if (method === 'GET' && path === '/api/leaderboard') {
     if (!env.DB) return fail(503, 'Database unavailable');
