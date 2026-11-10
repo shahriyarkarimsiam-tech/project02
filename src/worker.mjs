@@ -1,6 +1,7 @@
 import { replay, coinsForScore } from '../public/engine.mjs';
 import { replayBlocks, coinsForBlocksScore } from '../public/blocks-engine.mjs';
 import { replayColors, coinsForColorsScore } from '../public/color-engine.mjs';
+import { replayMemory, coinsForMemoryScore } from '../public/memory-engine.mjs';
 import { THEMES } from '../public/catalog.mjs';
 import { validateTelegramInitData, mintSession, verifySession, getCookie } from './auth.mjs';
 
@@ -45,7 +46,7 @@ function currentStreak(days) {
 }
 async function userProfile(env, uid) {
   const [player, themed, active, days, recent, daily] = await Promise.all([
-    env.DB.prepare('SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile, games_played AS gamesPlayed, equipped_theme AS equippedTheme, COALESCE(best_blocks_score, 0) AS bestBlocksScore, COALESCE(best_cascade_score, 0) AS bestCascadeScore FROM players WHERE id=?').bind(uid).first(),
+    env.DB.prepare('SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile, games_played AS gamesPlayed, equipped_theme AS equippedTheme, COALESCE(best_blocks_score, 0) AS bestBlocksScore, COALESCE(best_cascade_score, 0) AS bestCascadeScore, COALESCE(best_memory_score, 0) AS bestMemoryScore FROM players WHERE id=?').bind(uid).first(),
     env.DB.prepare('SELECT theme_id AS id FROM player_themes WHERE player_id=?').bind(uid).all(),
     env.DB.prepare('SELECT id, seed, mode, COALESCE(game_type, "merge") AS gameType, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
     env.DB.prepare("SELECT DISTINCT date(finished_at,'unixepoch') AS day FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY day DESC LIMIT 40").bind(uid).all(),
@@ -70,7 +71,7 @@ async function handleTelegramWebhook(request, env) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n\n👇 Tap below to start playing:`,
+        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n\n👇 Tap below to start playing:`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
@@ -82,6 +83,9 @@ async function handleTelegramWebhook(request, env) {
             ],
             [
               { text: '🔮 Play Color Cascade', web_app: { url: `${appUrl}?game=cascade` } }
+            ],
+            [
+              { text: '🧠 Play Memory Matrix', web_app: { url: `${appUrl}?game=memory` } }
             ],
             [
               { text: '⚡ Daily Challenge', web_app: { url: `${appUrl}?mode=daily` } }
@@ -125,7 +129,7 @@ async function route(request, env) {
   if (method === 'GET' && path === '/api/leaderboard') {
     if (!env.DB) return fail(503, 'Database unavailable');
     const rawGame = url.searchParams.get('game');
-    const gameType = rawGame === 'blocks' ? 'blocks' : rawGame === 'cascade' ? 'cascade' : 'merge';
+    const gameType = rawGame === 'blocks' ? 'blocks' : rawGame === 'cascade' ? 'cascade' : rawGame === 'memory' ? 'memory' : 'merge';
     const isDaily = url.searchParams.get('mode') === 'daily';
     let query;
     if (gameType === 'blocks') {
@@ -138,6 +142,11 @@ async function route(request, env) {
         ? env.DB.prepare(`SELECT p.display_name AS name, g.score AS score FROM games g JOIN players p ON p.id=g.player_id
              WHERE g.game_type='cascade' AND g.mode='daily' AND g.challenge_day=? AND g.finished_at IS NOT NULL ORDER BY g.score DESC, g.finished_at ASC LIMIT 20`).bind(todayUTC())
         : env.DB.prepare('SELECT display_name AS name, best_cascade_score AS score FROM players WHERE best_cascade_score>0 ORDER BY best_cascade_score DESC, created_at ASC LIMIT 20');
+    } else if (gameType === 'memory') {
+      query = isDaily
+        ? env.DB.prepare(`SELECT p.display_name AS name, g.score AS score FROM games g JOIN players p ON p.id=g.player_id
+             WHERE g.game_type='memory' AND g.mode='daily' AND g.challenge_day=? AND g.finished_at IS NOT NULL ORDER BY g.score DESC, g.finished_at ASC LIMIT 20`).bind(todayUTC())
+        : env.DB.prepare('SELECT display_name AS name, best_memory_score AS score FROM players WHERE best_memory_score>0 ORDER BY best_memory_score DESC, created_at ASC LIMIT 20');
     } else {
       query = isDaily
         ? env.DB.prepare(`SELECT p.display_name AS name, g.score AS score FROM games g JOIN players p ON p.id=g.player_id
@@ -157,7 +166,7 @@ async function route(request, env) {
     if (method==='POST' && path==='/api/game/start') {
       const input = await bodyJSON(request);
       const rawGame = input.game;
-      const gameType = rawGame === 'blocks' ? 'blocks' : rawGame === 'cascade' ? 'cascade' : 'merge';
+      const gameType = rawGame === 'blocks' ? 'blocks' : rawGame === 'cascade' ? 'cascade' : rawGame === 'memory' ? 'memory' : 'merge';
       const mode = input.mode ?? 'classic';
       if (mode!=='classic' && mode!=='daily') return fail(400,'Unknown game mode');
       const stamp=now(), day=todayUTC();
@@ -220,6 +229,18 @@ async function route(request, env) {
         verifiedScore = verified.score;
         const daily = await env.DB.prepare('SELECT COALESCE(SUM(coins_awarded),0) AS total FROM games WHERE player_id=? AND finished_at>=?').bind(uid,Math.floor(now()/DAY)*DAY).first();
         coins = Math.min(coinsForColorsScore(verifiedScore), Math.max(0, 60 - (daily?.total || 0)));
+      } else if (game.gameType === 'memory') {
+        if (input.moves.length < 1) return fail(400, 'Play at least one move');
+        for (const m of input.moves) {
+          if (!m || typeof m.pad !== 'number' || m.pad < 0 || m.pad > 8) {
+            return fail(400, 'Invalid memory move');
+          }
+        }
+        let verified;
+        try { verified = replayMemory(game.seed, input.moves); } catch { return fail(400, 'Invalid memory move sequence'); }
+        verifiedScore = verified.score;
+        const daily = await env.DB.prepare('SELECT COALESCE(SUM(coins_awarded),0) AS total FROM games WHERE player_id=? AND finished_at>=?').bind(uid,Math.floor(now()/DAY)*DAY).first();
+        coins = Math.min(coinsForMemoryScore(verifiedScore), Math.max(0, 60 - (daily?.total || 0)));
       } else {
         if (input.moves.length < 2 || input.moves.some(x=>!['left','right','up','down'].includes(x))) return fail(400,'Invalid moves');
         let verified;
@@ -235,7 +256,7 @@ async function route(request, env) {
         WHERE id=? AND player_id=? AND finished_at IS NULL RETURNING id`)
         .bind(now(),verifiedScore,input.moves.length,coins,bestTile,input.id,uid).first();
       if (!completed) return fail(409,'Game already saved');
-      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed,COALESCE(best_blocks_score,0) AS bestBlocksScore,COALESCE(best_cascade_score,0) AS bestCascadeScore FROM players WHERE id=?').bind(uid).first();
+      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed,COALESCE(best_blocks_score,0) AS bestBlocksScore,COALESCE(best_cascade_score,0) AS bestCascadeScore,COALESCE(best_memory_score,0) AS bestMemoryScore FROM players WHERE id=?').bind(uid).first();
       return json({ saved:true, score:verifiedScore, coinsAwarded:coins, mode:game.mode, game:game.gameType, ...profile });
     }
     if (method==='POST' && path==='/api/shop/buy') {

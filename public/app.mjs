@@ -1,6 +1,7 @@
 import { newGame, move, replay, coinsForScore } from './engine.mjs';
 import { newBlocksGame, canPlace, placeBlock, replayBlocks, coinsForBlocksScore, GRID_SIZE } from './blocks-engine.mjs';
 import { newColorGame, swapGems, replayColors, coinsForColorsScore, GEMS, BOARD_SIZE, MAX_MOVES } from './color-engine.mjs';
+import { newMemoryGame, tapPad, replayMemory, coinsForMemoryScore, PADS, NUM_PADS, MAX_LIVES } from './memory-engine.mjs';
 import { THEMES, earnedBadges } from './catalog.mjs';
 
 const $ = id => document.getElementById(id);
@@ -10,11 +11,11 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
+const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
 
 let player = emptyPlayer(), online = false, view = 'home';
-let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade'
-let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade'
+let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory'
+let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade' | 'memory'
 let rankMode = 'classic'; // 'classic' | 'daily'
 let currentMode = 'classic'; // for Merge Streak
 let lastFinishedGameType = 'merge';
@@ -29,6 +30,9 @@ let blocksState = null, blocksMoves = [], currentBlocksRun = null, blocksComplet
 
 // Color Cascade state
 let cascadeState = null, cascadeMoves = [], currentCascadeRun = null, cascadeCompleted = false, cascadeBusy = false, selectedGemCoord = null;
+
+// Memory Matrix state
+let memoryState = null, memoryMoves = [], currentMemoryRun = null, memoryCompleted = false, memoryBusy = false, isPlayingSequence = false;
 
 let authToken = null;
 try { authToken = sessionStorage.getItem('ms_auth_token'); } catch {}
@@ -67,6 +71,9 @@ function saveBlocksDraft() { if (!currentBlocksRun || blocksCompleted) return; w
 
 function draftKeyCascade(run) { return online ? `ms_cascade_run_${player.id}_${run.id}` : 'ms_demo_cascade_run'; }
 function saveCascadeDraft() { if (!currentCascadeRun || cascadeCompleted) return; write(draftKeyCascade(currentCascadeRun), { seed: currentCascadeRun.seed, moves: cascadeMoves, mode: currentCascadeRun.mode, id: currentCascadeRun.id }); }
+
+function draftKeyMemory(run) { return online ? `ms_memory_run_${player.id}_${run.id}` : 'ms_demo_memory_run'; }
+function saveMemoryDraft() { if (!currentMemoryRun || memoryCompleted) return; write(draftKeyMemory(currentMemoryRun), { seed: currentMemoryRun.seed, moves: memoryMoves, mode: currentMemoryRun.mode, id: currentMemoryRun.id }); }
 
 function storeGuest() {
   if (online) return;
@@ -128,15 +135,18 @@ function renderProfileBase() {
   $('home-best').textContent = num(Math.max(player.bestScore, state?.score || 0));
   $('home-blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
   $('home-cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
+  $('home-memory-best').textContent = num(Math.max(player.bestMemoryScore || 0, memoryState?.score || 0));
   $('home-streak').textContent = num(player.streak);
 
   $('best-score').textContent = num(Math.max(player.bestScore, state?.score || 0));
   $('blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
   $('cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
+  $('memory-best').textContent = num(Math.max(player.bestMemoryScore || 0, memoryState?.score || 0));
 
   $('profile-best').textContent = num(player.bestScore);
   $('profile-blocks-best').textContent = num(player.bestBlocksScore || 0);
   $('profile-cascade-best').textContent = num(player.bestCascadeScore || 0);
+  $('profile-memory-best').textContent = num(player.bestMemoryScore || 0);
   $('profile-streak').textContent = num(player.streak);
 
   updateRank();
@@ -149,11 +159,12 @@ function renderRecent(containerId) {
   for (const game of recentGames.slice(0, 5)) {
     const isBlocks = game.gameType === 'blocks';
     const isCascade = game.gameType === 'cascade';
+    const isMemory = game.gameType === 'memory';
     const isDaily = game.mode === 'daily';
     const row = el('div', 'recent-item');
-    const icon = el('span', 'recent-icon', isCascade ? '🔮' : isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
+    const icon = el('span', 'recent-icon', isMemory ? '🧠' : isCascade ? '🔮' : isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
     const detail = el('div');
-    const label = el('strong', '', isCascade ? 'Color Cascade' : isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
+    const label = el('strong', '', isMemory ? 'Memory Matrix' : isCascade ? 'Color Cascade' : isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
     const dt = new Date(game.finishedAt * 1000).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
     detail.append(label, el('small', '', `${dt} · Completed`));
     row.append(icon, detail, el('b', '', num(game.score)));
@@ -851,17 +862,274 @@ async function completeCascadeGame() {
 }
 
 // ==========================================
+// GAME 4: MEMORY MATRIX (3x3 PATTERN REPEAT)
+// ==========================================
+
+let audioCtx = null;
+function playPadTone(padIndex, duration = 0.22) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const pad = PADS[padIndex];
+    if (!pad) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(pad.freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch {}
+}
+
+function flashPad(padIndex, duration = 280) {
+  const padEl = document.querySelector(`.memory-pad[data-pad="${padIndex}"]`);
+  if (!padEl) return;
+  padEl.classList.add('pad-active');
+  playPadTone(padIndex, duration / 1000);
+  setTimeout(() => {
+    padEl.classList.remove('pad-active');
+  }, duration);
+}
+
+function renderMemoryUI() {
+  if (!memoryState) return;
+
+  $('memory-score').textContent = num(memoryState.score);
+  $('memory-best').textContent = num(player.bestMemoryScore || 0);
+
+  const livesStr = memoryState.lives > 0 ? '❤️'.repeat(memoryState.lives) : '💀 Game Over';
+  $('memory-lives').textContent = livesStr;
+
+  $('memory-round-tag').textContent = `ROUND ${memoryState.round}`;
+  $('memory-streak-counter').textContent = `${memoryState.streak} STREAK`;
+
+  $('memory-state-chip').textContent = memoryState.over ? 'GAME OVER' : isPlayingSequence ? 'WATCH PATTERN' : 'YOUR TURN';
+  $('memory-bank-btn').disabled = !memoryMoves.length || memoryCompleted || memoryBusy || isPlayingSequence;
+
+  const boardEl = $('memory-board');
+  if (boardEl.children.length !== NUM_PADS) {
+    clear(boardEl);
+    PADS.forEach(pad => {
+      const padEl = el('button', `memory-pad pad-${pad.id}`);
+      padEl.dataset.pad = String(pad.id);
+      padEl.setAttribute('aria-label', `Pad ${pad.id + 1}: ${pad.name}`);
+
+      const glyph = el('span', 'pad-glyph', pad.symbol);
+      const label = el('span', 'pad-label', pad.name.toUpperCase());
+      padEl.append(glyph, label);
+
+      padEl.addEventListener('click', () => handlePadClick(pad.id));
+      boardEl.append(padEl);
+    });
+  }
+}
+
+async function playCurrentSequence() {
+  if (!memoryState || memoryCompleted) return;
+  isPlayingSequence = true;
+  renderMemoryUI();
+  $('memory-status').textContent = `Round ${memoryState.round}: Watch the pattern closely...`;
+
+  const roundLength = memoryState.round;
+  const speed = Math.max(260, 480 - roundLength * 8);
+
+  for (let i = 0; i < roundLength; i++) {
+    if (!memoryState || memoryCompleted) break;
+    await new Promise(r => setTimeout(r, speed * 0.35));
+    flashPad(memoryState.sequence[i], speed * 0.7);
+    await new Promise(r => setTimeout(r, speed * 0.75));
+  }
+
+  isPlayingSequence = false;
+  if (memoryState && !memoryCompleted) {
+    renderMemoryUI();
+    $('memory-status').textContent = `Your turn! Tap the ${roundLength} pad${roundLength > 1 ? 's' : ''} in exact sequence.`;
+  }
+}
+
+function handlePadClick(padIndex) {
+  if (!memoryState || memoryCompleted || memoryBusy || isPlayingSequence) return;
+
+  flashPad(padIndex, 200);
+  try { tg?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+
+  const result = tapPad(memoryState, padIndex);
+  memoryState = result.state;
+  memoryMoves.push({ pad: padIndex });
+  saveMemoryDraft();
+
+  if (result.correct) {
+    if (result.roundCleared) {
+      try { tg?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+      $('memory-status').textContent = `Round ${memoryState.round - 1} Cleared! +${result.pointsGained} pts! Next round starting...`;
+      renderMemoryUI();
+      if (memoryState.over) {
+        completeMemoryGame();
+      } else {
+        setTimeout(() => {
+          renderMemoryUI();
+          playCurrentSequence();
+        }, 800);
+      }
+    } else {
+      const remaining = memoryState.round - memoryState.step;
+      $('memory-status').textContent = `Correct! ${remaining} step${remaining > 1 ? 's' : ''} left in this round.`;
+      renderMemoryUI();
+    }
+  } else {
+    // Mistake
+    try { tg?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+    const padEl = document.querySelector(`.memory-pad[data-pad="${padIndex}"]`);
+    if (padEl) {
+      padEl.classList.add('pad-error');
+      setTimeout(() => padEl.classList.remove('pad-error'), 400);
+    }
+
+    if (memoryState.over) {
+      $('memory-status').textContent = 'Out of lives! Game over. Saving score...';
+      renderMemoryUI();
+      completeMemoryGame();
+    } else {
+      $('memory-status').textContent = `Wrong pad! -1 life (${memoryState.lives} left). Repeating round sequence...`;
+      renderMemoryUI();
+      setTimeout(() => {
+        playCurrentSequence();
+      }, 900);
+    }
+  }
+}
+
+function hydrateMemoryRun(run, history) {
+  currentMemoryRun = { ...run, game: 'memory', mode: 'classic' };
+  memoryMoves = Array.isArray(history) ? history : [];
+  try {
+    memoryState = replayMemory(run.seed, memoryMoves);
+  } catch {
+    memoryMoves = [];
+    memoryState = newMemoryGame(run.seed);
+  }
+  memoryCompleted = false;
+  saveMemoryDraft();
+  renderMemoryUI();
+  if (!memoryState.over && memoryMoves.length === 0) {
+    setTimeout(() => playCurrentSequence(), 400);
+  } else {
+    $('memory-status').textContent = 'Run restored. Repeat the sequence to advance!';
+  }
+}
+
+async function launchMemory(newRun = false) {
+  if (memoryBusy) return;
+  if (!newRun && currentMemoryRun && !memoryCompleted) {
+    switchGame('memory');
+    setView('play');
+    return;
+  }
+  if (!newRun && !online) {
+    const draft = read('ms_demo_memory_run');
+    if (draft && Number.isInteger(draft.seed)) {
+      hydrateMemoryRun(draft, draft.moves);
+      switchGame('memory');
+      setView('play');
+      return;
+    }
+  }
+
+  memoryBusy = true;
+  $('memory-new-game-btn').disabled = true;
+  $('memory-status').textContent = 'Starting new Memory Matrix run...';
+
+  try {
+    let run;
+    if (online) {
+      run = await api('/game/start', { method: 'POST', body: { game: 'memory', mode: 'classic' } });
+      activeRuns.unshift({ id: run.id, seed: run.seed, gameType: 'memory', mode: 'classic', startedAt: run.startedAt });
+    } else {
+      run = { id: `guest-memory-${stamp()}`, seed: localSeed(), game: 'memory', mode: 'classic', startedAt: stamp() };
+    }
+    hydrateMemoryRun(run, []);
+    switchGame('memory');
+    setView('play');
+  } catch (err) {
+    $('memory-status').textContent = 'Could not start new run. Try again.';
+    toast(err.message);
+  } finally {
+    memoryBusy = false;
+    $('memory-new-game-btn').disabled = false;
+    renderMemoryUI();
+  }
+}
+
+async function completeMemoryGame() {
+  if (!memoryState || memoryCompleted || memoryBusy || memoryMoves.length < 1) return;
+  memoryBusy = true;
+  $('memory-bank-btn').disabled = true;
+  $('memory-status').textContent = 'Verifying and saving your memory score...';
+  lastFinishedGameType = 'memory';
+
+  try {
+    let earned, score = memoryState.score;
+    if (online) {
+      const result = await api('/game/finish', { method: 'POST', body: { id: currentMemoryRun.id, moves: memoryMoves } });
+      earned = result.coinsAwarded;
+      score = result.score;
+      player.coins = result.coins;
+      player.bestMemoryScore = result.bestMemoryScore;
+      player.gamesPlayed = result.gamesPlayed;
+      activeRuns = activeRuns.filter(run => run.id !== currentMemoryRun.id);
+    } else {
+      const todayEarned = recentGames.filter(g => new Date(g.finishedAt * 1000).toISOString().slice(0, 10) === dateUTC()).reduce((sum, g) => sum + (g.coinsAwarded || 0), 0);
+      earned = Math.min(coinsForMemoryScore(score), Math.max(0, 60 - todayEarned));
+      player.coins += earned;
+      player.bestMemoryScore = Math.max(player.bestMemoryScore || 0, score);
+      player.gamesPlayed++;
+    }
+
+    erase(draftKeyMemory(currentMemoryRun));
+    recentGames.unshift({ score, mode: 'classic', gameType: 'memory', finishedAt: stamp(), coinsAwarded: earned });
+    recentGames = recentGames.slice(0, 45);
+    player.streak = localStreak();
+    storeGuest();
+    memoryCompleted = true;
+
+    $('finish-title').textContent = memoryState.over ? 'Run finished!' : 'Score saved!';
+    $('final-score').textContent = num(score);
+    $('final-coins').textContent = `+${num(earned)}`;
+    $('finish-caption').textContent = online ? 'Your verified score counts toward the Memory Matrix rankings.' : 'Practice scores and coins stay on this device.';
+    $('play-again-btn').textContent = 'Play again ↻';
+    $('memory-status').textContent = 'Run saved. Sharpen your memory and try again!';
+
+    renderMemoryUI();
+    renderDashboard();
+    renderShop();
+    $('finish-dialog').showModal();
+    if (online) refreshLeaderboard();
+  } catch (err) {
+    $('memory-status').textContent = 'Saving failed. Your game remains stored locally.';
+    toast(err.message);
+  } finally {
+    memoryBusy = false;
+    renderMemoryUI();
+  }
+}
+
+// ==========================================
 // GAME SWITCHING & LEADERBOARDS
 // ==========================================
 
 function switchGame(gameType) {
-  activeGame = gameType === 'blocks' ? 'blocks' : gameType === 'cascade' ? 'cascade' : 'merge';
+  activeGame = gameType === 'blocks' ? 'blocks' : gameType === 'cascade' ? 'cascade' : gameType === 'memory' ? 'memory' : 'merge';
   document.querySelectorAll('[data-switch-game]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.switchGame === activeGame);
   });
   $('merge-game-view').style.display = activeGame === 'merge' ? 'block' : 'none';
   $('blocks-game-view').style.display = activeGame === 'blocks' ? 'block' : 'none';
   $('cascade-game-view').style.display = activeGame === 'cascade' ? 'block' : 'none';
+  $('memory-game-view').style.display = activeGame === 'memory' ? 'block' : 'none';
 
   if (activeGame === 'blocks') {
     $('arena-main-title').innerHTML = 'Block <span>Collapse.</span>';
@@ -873,6 +1141,11 @@ function switchGame(gameType) {
     $('arena-main-desc').textContent = '7×7 gem swap. Line up 3 or more gems and chain cascading collapses.';
     if (!cascadeState) launchCascade(false);
     else renderCascadeUI();
+  } else if (activeGame === 'memory') {
+    $('arena-main-title').innerHTML = 'Memory <span>Matrix.</span>';
+    $('arena-main-desc').textContent = '3×3 pattern repeat. Watch the neon pads and repeat the sequence.';
+    if (!memoryState) launchMemory(false);
+    else renderMemoryUI();
   } else {
     $('arena-main-title').innerHTML = 'Merge <span>Streak.</span>';
     $('arena-main-desc').textContent = '4×4 number merge. Combine matching tiles to reach 2048 and beyond.';
@@ -893,7 +1166,7 @@ function paintLeaders(list) {
 
 async function refreshLeaderboard() {
   $('rank-date-note').textContent = rankMode === 'daily' ? `UTC challenge · ${dateUTC()}` : 'Verified completed games only';
-  const gameName = rankGame === 'blocks' ? 'Block Collapse' : rankGame === 'cascade' ? 'Color Cascade' : 'Merge Streak';
+  const gameName = rankGame === 'blocks' ? 'Block Collapse' : rankGame === 'cascade' ? 'Color Cascade' : rankGame === 'memory' ? 'Memory Matrix' : 'Merge Streak';
   $('ranking-game-title').textContent = `${gameName} Top 20`;
   const cacheKey = `${rankGame}_${rankMode}`;
   try {
@@ -975,11 +1248,24 @@ async function boot() {
     hydrateCascadeRun(run, []);
   }
 
+  // Hydrate Memory Matrix run
+  const activeMemory = online ? activeRuns.find(run => run.gameType === 'memory') : read('ms_demo_memory_run');
+  if (activeMemory) {
+    const cache = online ? read(`ms_memory_run_${player.id}_${activeMemory.id}`, {}) : activeMemory;
+    hydrateMemoryRun(activeMemory, cache.moves || []);
+  } else if (!online) {
+    const run = { id: `guest-memory-${stamp()}`, mode: 'classic', game: 'memory', seed: localSeed(), startedAt: stamp() };
+    hydrateMemoryRun(run, []);
+  }
+
   renderDashboard();
   renderShop();
   refreshLeaderboard();
 
-  if (urlParamGame === 'cascade') {
+  if (urlParamGame === 'memory') {
+    switchGame('memory');
+    setView('play');
+  } else if (urlParamGame === 'cascade') {
     switchGame('cascade');
     setView('play');
   } else if (urlParamGame === 'blocks') {
@@ -1004,7 +1290,9 @@ for (const button of document.querySelectorAll('[data-launch-game]')) {
   button.addEventListener('click', () => {
     const g = button.dataset.launchGame;
     const m = button.dataset.launchMode || 'classic';
-    if (g === 'cascade') {
+    if (g === 'memory') {
+      launchMemory(false);
+    } else if (g === 'cascade') {
       launchCascade(false);
     } else if (g === 'blocks') {
       launchBlocks(false);
@@ -1052,12 +1340,18 @@ $('blocks-bank-btn').addEventListener('click', () => completeBlocksGame());
 $('cascade-new-game-btn').addEventListener('click', () => launchCascade(true));
 $('cascade-bank-btn').addEventListener('click', () => completeCascadeGame());
 
+$('memory-new-game-btn').addEventListener('click', () => launchMemory(true));
+$('memory-bank-btn').addEventListener('click', () => completeMemoryGame());
+
 $('help-btn').addEventListener('click', () => $('info-dialog').showModal());
 $('refresh-leaders').addEventListener('click', refreshLeaderboard);
 $('dismiss-finish-btn').addEventListener('click', () => { $('finish-dialog').close(); setView('home'); });
 $('play-again-btn').addEventListener('click', () => {
   $('finish-dialog').close();
-  if (lastFinishedGameType === 'cascade') {
+  if (lastFinishedGameType === 'memory') {
+    switchGame('memory');
+    launchMemory(true);
+  } else if (lastFinishedGameType === 'cascade') {
     switchGame('cascade');
     launchCascade(true);
   } else if (lastFinishedGameType === 'blocks') {
