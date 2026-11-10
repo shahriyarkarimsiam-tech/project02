@@ -2,6 +2,7 @@ import { newGame, move, replay, coinsForScore } from './engine.mjs';
 import { newBlocksGame, canPlace, placeBlock, replayBlocks, coinsForBlocksScore, GRID_SIZE } from './blocks-engine.mjs';
 import { newColorGame, swapGems, replayColors, coinsForColorsScore, GEMS, BOARD_SIZE, MAX_MOVES } from './color-engine.mjs';
 import { newMemoryGame, tapPad, replayMemory, coinsForMemoryScore, PADS, NUM_PADS, MAX_LIVES } from './memory-engine.mjs';
+import { newViperGame, stepSnake, replayViper, coinsForViperScore, GRID_SIZE as VIPER_GRID_SIZE } from './viper-engine.mjs';
 import { THEMES, earnedBadges } from './catalog.mjs';
 
 const $ = id => document.getElementById(id);
@@ -11,11 +12,11 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
+const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
 
 let player = emptyPlayer(), online = false, view = 'home';
-let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory'
-let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade' | 'memory'
+let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
+let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
 let rankMode = 'classic'; // 'classic' | 'daily'
 let currentMode = 'classic'; // for Merge Streak
 let lastFinishedGameType = 'merge';
@@ -33,6 +34,9 @@ let cascadeState = null, cascadeMoves = [], currentCascadeRun = null, cascadeCom
 
 // Memory Matrix state
 let memoryState = null, memoryMoves = [], currentMemoryRun = null, memoryCompleted = false, memoryBusy = false, isPlayingSequence = false;
+
+// Neon Viper state
+let viperState = null, viperMoves = [], currentViperRun = null, viperCompleted = false, viperBusy = false, viperLoopTimer = null, viperNextDir = 'right';
 
 let authToken = null;
 try { authToken = sessionStorage.getItem('ms_auth_token'); } catch {}
@@ -75,6 +79,9 @@ function saveCascadeDraft() { if (!currentCascadeRun || cascadeCompleted) return
 function draftKeyMemory(run) { return online ? `ms_memory_run_${player.id}_${run.id}` : 'ms_demo_memory_run'; }
 function saveMemoryDraft() { if (!currentMemoryRun || memoryCompleted) return; write(draftKeyMemory(currentMemoryRun), { seed: currentMemoryRun.seed, moves: memoryMoves, mode: currentMemoryRun.mode, id: currentMemoryRun.id }); }
 
+function draftKeyViper(run) { return online ? `ms_viper_run_${player.id}_${run.id}` : 'ms_demo_viper_run'; }
+function saveViperDraft() { if (!currentViperRun || viperCompleted) return; write(draftKeyViper(currentViperRun), { seed: currentViperRun.seed, moves: viperMoves, mode: currentViperRun.mode, id: currentViperRun.id }); }
+
 function storeGuest() {
   if (online) return;
   player.streak = localStreak();
@@ -88,6 +95,8 @@ function avatar() { return (player.name || 'G').trim().charAt(0).toUpperCase() |
 function setView(next) {
   if (!names[next]) return;
   view = next;
+  if (next !== 'play') stopViperLoop();
+  else if (activeGame === 'viper') startViperLoop();
   document.querySelectorAll('[data-view]').forEach(node => node.classList.toggle('active', node.dataset.view === next));
   document.querySelectorAll('[data-view-target]').forEach(node => {
     node.classList.toggle('active', node.dataset.viewTarget === next);
@@ -136,17 +145,20 @@ function renderProfileBase() {
   $('home-blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
   $('home-cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
   $('home-memory-best').textContent = num(Math.max(player.bestMemoryScore || 0, memoryState?.score || 0));
+  $('home-viper-best').textContent = num(Math.max(player.bestViperScore || 0, viperState?.score || 0));
   $('home-streak').textContent = num(player.streak);
 
   $('best-score').textContent = num(Math.max(player.bestScore, state?.score || 0));
   $('blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
   $('cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
   $('memory-best').textContent = num(Math.max(player.bestMemoryScore || 0, memoryState?.score || 0));
+  $('viper-best').textContent = num(Math.max(player.bestViperScore || 0, viperState?.score || 0));
 
   $('profile-best').textContent = num(player.bestScore);
   $('profile-blocks-best').textContent = num(player.bestBlocksScore || 0);
   $('profile-cascade-best').textContent = num(player.bestCascadeScore || 0);
   $('profile-memory-best').textContent = num(player.bestMemoryScore || 0);
+  $('profile-viper-best').textContent = num(player.bestViperScore || 0);
   $('profile-streak').textContent = num(player.streak);
 
   updateRank();
@@ -160,11 +172,12 @@ function renderRecent(containerId) {
     const isBlocks = game.gameType === 'blocks';
     const isCascade = game.gameType === 'cascade';
     const isMemory = game.gameType === 'memory';
+    const isViper = game.gameType === 'viper';
     const isDaily = game.mode === 'daily';
     const row = el('div', 'recent-item');
-    const icon = el('span', 'recent-icon', isMemory ? '🧠' : isCascade ? '🔮' : isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
+    const icon = el('span', 'recent-icon', isViper ? '🐍' : isMemory ? '🧠' : isCascade ? '🔮' : isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
     const detail = el('div');
-    const label = el('strong', '', isMemory ? 'Memory Matrix' : isCascade ? 'Color Cascade' : isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
+    const label = el('strong', '', isViper ? 'Neon Viper' : isMemory ? 'Memory Matrix' : isCascade ? 'Color Cascade' : isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
     const dt = new Date(game.finishedAt * 1000).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
     detail.append(label, el('small', '', `${dt} · Completed`));
     row.append(icon, detail, el('b', '', num(game.score)));
@@ -1118,11 +1131,347 @@ async function completeMemoryGame() {
 }
 
 // ==========================================
+// GAME 5: NEON VIPER (16x16 REFLEX SNAKE)
+// ==========================================
+
+function playPelletChime() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(659.25, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.14);
+  } catch {}
+}
+
+function playCrashBuzz() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + 0.28);
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+  } catch {}
+}
+
+function renderViperUI() {
+  if (!viperState) return;
+
+  $('viper-score').textContent = num(viperState.score);
+  $('viper-best').textContent = num(player.bestViperScore || 0);
+  $('viper-length').textContent = num(viperState.snake.length);
+  $('viper-food-counter').textContent = `${viperState.foodEaten} PELLETS`;
+
+  const speedMs = Math.max(75, 125 - Math.floor(viperState.foodEaten / 3) * 4);
+  $('viper-speed-tag').textContent = speedMs < 95 ? 'WARP SPEED' : speedMs < 115 ? 'FAST SPEED' : 'NORMAL SPEED';
+
+  $('viper-state-chip').textContent = viperState.over ? 'GAME OVER' : 'SLITHERING';
+  $('viper-bank-btn').disabled = !viperMoves.length || viperCompleted || viperBusy;
+
+  renderViperCanvas();
+}
+
+function renderViperCanvas() {
+  const canvas = $('viper-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const size = canvas.width;
+  const cellSize = size / VIPER_GRID_SIZE;
+
+  // Background clear
+  ctx.fillStyle = '#080f18';
+  ctx.fillRect(0, 0, size, size);
+
+  // Subtle cyber grid
+  ctx.strokeStyle = '#121e2c';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < VIPER_GRID_SIZE; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * cellSize, 0);
+    ctx.lineTo(i * cellSize, size);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, i * cellSize);
+    ctx.lineTo(size, i * cellSize);
+    ctx.stroke();
+  }
+
+  if (!viperState) return;
+
+  // Glowing energy food pellet
+  if (viperState.food) {
+    const fx = viperState.food.c * cellSize + cellSize / 2;
+    const fy = viperState.food.r * cellSize + cellSize / 2;
+    const radius = cellSize * 0.38;
+
+    const grad = ctx.createRadialGradient(fx, fy, 2, fx, fy, cellSize * 0.9);
+    grad.addColorStop(0, '#ff007f');
+    grad.addColorStop(0.5, 'rgba(255, 0, 127, 0.45)');
+    grad.addColorStop(1, 'rgba(255, 0, 127, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(fx, fy, cellSize * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff4da6';
+    ctx.beginPath();
+    ctx.arc(fx, fy, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(fx - radius * 0.3, fy - radius * 0.3, radius * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw snake body
+  const len = viperState.snake.length;
+  for (let i = len - 1; i >= 0; i--) {
+    const seg = viperState.snake[i];
+    const x = seg.c * cellSize;
+    const y = seg.r * cellSize;
+    const pad = 2;
+
+    if (i === 0) {
+      // Head
+      ctx.fillStyle = '#36e2b6';
+      ctx.shadowColor = '#00f0a8';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.roundRect(x + pad, y + pad, cellSize - pad * 2, cellSize - pad * 2, 7);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Cute directional eyes
+      ctx.fillStyle = '#08171d';
+      const eyeR = 2.4;
+      let e1x = x + cellSize / 2, e1y = y + cellSize / 2;
+      let e2x = x + cellSize / 2, e2y = y + cellSize / 2;
+
+      if (viperState.dir === 'right') {
+        e1x = x + cellSize * 0.68; e1y = y + cellSize * 0.28;
+        e2x = x + cellSize * 0.68; e2y = y + cellSize * 0.72;
+      } else if (viperState.dir === 'left') {
+        e1x = x + cellSize * 0.32; e1y = y + cellSize * 0.28;
+        e2x = x + cellSize * 0.32; e2y = y + cellSize * 0.72;
+      } else if (viperState.dir === 'up') {
+        e1x = x + cellSize * 0.28; e1y = y + cellSize * 0.32;
+        e2x = x + cellSize * 0.72; e2y = y + cellSize * 0.32;
+      } else {
+        e1x = x + cellSize * 0.28; e1y = y + cellSize * 0.68;
+        e2x = x + cellSize * 0.72; e2y = y + cellSize * 0.68;
+      }
+
+      ctx.beginPath(); ctx.arc(e1x, e1y, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(e2x, e2y, eyeR, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // Body segment gradient
+      const ratio = i / len;
+      ctx.fillStyle = `hsl(${165 - ratio * 45}, 90%, ${55 - ratio * 15}%)`;
+      ctx.beginPath();
+      ctx.roundRect(x + pad + 1, y + pad + 1, cellSize - (pad + 1) * 2, cellSize - (pad + 1) * 2, 5);
+      ctx.fill();
+    }
+  }
+}
+
+function setViperDirection(dir) {
+  if (!viperState || viperState.over || viperCompleted) return;
+  const opp = { up: 'down', down: 'up', left: 'right', right: 'left' };
+  if (opp[dir] !== viperState.dir) {
+    viperNextDir = dir;
+    try { tg?.HapticFeedback?.selectionChanged?.(); } catch {}
+  }
+}
+
+function viperTick() {
+  if (!viperState || viperState.over || viperCompleted) {
+    stopViperLoop();
+    return;
+  }
+
+  const prevFoodCount = viperState.foodEaten;
+  viperState = stepSnake(viperState, viperNextDir);
+  viperMoves.push(viperNextDir);
+  saveViperDraft();
+
+  if (viperState.foodEaten > prevFoodCount) {
+    playPelletChime();
+    try { tg?.HapticFeedback?.impactOccurred?.('medium'); } catch {}
+    $('viper-status').textContent = `Energy pellet absorbed! Length ${viperState.snake.length} · +${100 + viperState.foodEaten * 15} pts`;
+  }
+
+  renderViperUI();
+
+  if (viperState.over) {
+    stopViperLoop();
+    playCrashBuzz();
+    try { tg?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+    $('viper-status').textContent = 'Collision! Viper crashed. Saving your score...';
+    completeViperGame();
+    return;
+  }
+
+  const speedMs = Math.max(75, 125 - Math.floor(viperState.foodEaten / 3) * 4);
+  viperLoopTimer = setTimeout(viperTick, speedMs);
+}
+
+function startViperLoop() {
+  stopViperLoop();
+  if (viperState && !viperState.over && !viperCompleted && activeGame === 'viper' && view === 'play') {
+    const speedMs = Math.max(75, 125 - Math.floor(viperState.foodEaten / 3) * 4);
+    viperLoopTimer = setTimeout(viperTick, speedMs);
+  }
+}
+
+function stopViperLoop() {
+  if (viperLoopTimer) {
+    clearTimeout(viperLoopTimer);
+    viperLoopTimer = null;
+  }
+}
+
+function hydrateViperRun(run, history) {
+  currentViperRun = { ...run, game: 'viper', mode: 'classic' };
+  viperMoves = Array.isArray(history) ? history : [];
+  try {
+    viperState = replayViper(run.seed, viperMoves);
+  } catch {
+    viperMoves = [];
+    viperState = newViperGame(run.seed);
+  }
+  viperNextDir = viperState.dir;
+  viperCompleted = false;
+  saveViperDraft();
+  renderViperUI();
+  $('viper-status').textContent = viperState.over ? 'Game over. Tap New Run to slither again!' : 'Viper ready. Steer to collect pellets and grow!';
+  if (!viperState.over && activeGame === 'viper' && view === 'play') {
+    startViperLoop();
+  }
+}
+
+async function launchViper(newRun = false) {
+  if (viperBusy) return;
+  if (!newRun && currentViperRun && !viperCompleted && !viperState?.over) {
+    switchGame('viper');
+    setView('play');
+    startViperLoop();
+    return;
+  }
+  if (!newRun && !online) {
+    const draft = read('ms_demo_viper_run');
+    if (draft && Number.isInteger(draft.seed)) {
+      hydrateViperRun(draft, draft.moves);
+      switchGame('viper');
+      setView('play');
+      return;
+    }
+  }
+
+  stopViperLoop();
+  viperBusy = true;
+  $('viper-new-game-btn').disabled = true;
+  $('viper-status').textContent = 'Starting new Neon Viper run...';
+
+  try {
+    let run;
+    if (online) {
+      run = await api('/game/start', { method: 'POST', body: { game: 'viper', mode: 'classic' } });
+      activeRuns.unshift({ id: run.id, seed: run.seed, gameType: 'viper', mode: 'classic', startedAt: run.startedAt });
+    } else {
+      run = { id: `guest-viper-${stamp()}`, seed: localSeed(), game: 'viper', mode: 'classic', startedAt: stamp() };
+    }
+    hydrateViperRun(run, []);
+    switchGame('viper');
+    setView('play');
+  } catch (err) {
+    $('viper-status').textContent = 'Could not start new run. Try again.';
+    toast(err.message);
+  } finally {
+    viperBusy = false;
+    $('viper-new-game-btn').disabled = false;
+    renderViperUI();
+  }
+}
+
+async function completeViperGame() {
+  stopViperLoop();
+  if (!viperState || viperCompleted || viperBusy || viperMoves.length < 1) return;
+  viperBusy = true;
+  $('viper-bank-btn').disabled = true;
+  $('viper-status').textContent = 'Verifying and saving your viper score...';
+  lastFinishedGameType = 'viper';
+
+  try {
+    let earned, score = viperState.score;
+    if (online) {
+      const result = await api('/game/finish', { method: 'POST', body: { id: currentViperRun.id, moves: viperMoves } });
+      earned = result.coinsAwarded;
+      score = result.score;
+      player.coins = result.coins;
+      player.bestViperScore = result.bestViperScore;
+      player.gamesPlayed = result.gamesPlayed;
+      activeRuns = activeRuns.filter(run => run.id !== currentViperRun.id);
+    } else {
+      const todayEarned = recentGames.filter(g => new Date(g.finishedAt * 1000).toISOString().slice(0, 10) === dateUTC()).reduce((sum, g) => sum + (g.coinsAwarded || 0), 0);
+      earned = Math.min(coinsForViperScore(score), Math.max(0, 60 - todayEarned));
+      player.coins += earned;
+      player.bestViperScore = Math.max(player.bestViperScore || 0, score);
+      player.gamesPlayed++;
+    }
+
+    erase(draftKeyViper(currentViperRun));
+    recentGames.unshift({ score, mode: 'classic', gameType: 'viper', finishedAt: stamp(), coinsAwarded: earned });
+    recentGames = recentGames.slice(0, 45);
+    player.streak = localStreak();
+    storeGuest();
+    viperCompleted = true;
+
+    $('finish-title').textContent = viperState.over ? 'Run finished!' : 'Score saved!';
+    $('final-score').textContent = num(score);
+    $('final-coins').textContent = `+${num(earned)}`;
+    $('finish-caption').textContent = online ? 'Your verified score counts toward the Neon Viper rankings.' : 'Practice scores and coins stay on this device.';
+    $('play-again-btn').textContent = 'Play again ↻';
+    $('viper-status').textContent = 'Run saved. Can you beat your personal best?';
+
+    renderViperUI();
+    renderDashboard();
+    renderShop();
+    $('finish-dialog').showModal();
+    if (online) refreshLeaderboard();
+  } catch (err) {
+    $('viper-status').textContent = 'Saving failed. Your game remains stored locally.';
+    toast(err.message);
+  } finally {
+    viperBusy = false;
+    renderViperUI();
+  }
+}
+
+// ==========================================
 // GAME SWITCHING & LEADERBOARDS
 // ==========================================
 
 function switchGame(gameType) {
-  activeGame = gameType === 'blocks' ? 'blocks' : gameType === 'cascade' ? 'cascade' : gameType === 'memory' ? 'memory' : 'merge';
+  stopViperLoop();
+  activeGame = gameType === 'blocks' ? 'blocks' : gameType === 'cascade' ? 'cascade' : gameType === 'memory' ? 'memory' : gameType === 'viper' ? 'viper' : 'merge';
   document.querySelectorAll('[data-switch-game]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.switchGame === activeGame);
   });
@@ -1130,6 +1479,7 @@ function switchGame(gameType) {
   $('blocks-game-view').style.display = activeGame === 'blocks' ? 'block' : 'none';
   $('cascade-game-view').style.display = activeGame === 'cascade' ? 'block' : 'none';
   $('memory-game-view').style.display = activeGame === 'memory' ? 'block' : 'none';
+  $('viper-game-view').style.display = activeGame === 'viper' ? 'block' : 'none';
 
   if (activeGame === 'blocks') {
     $('arena-main-title').innerHTML = 'Block <span>Collapse.</span>';
@@ -1146,6 +1496,11 @@ function switchGame(gameType) {
     $('arena-main-desc').textContent = '3×3 pattern repeat. Watch the neon pads and repeat the sequence.';
     if (!memoryState) launchMemory(false);
     else renderMemoryUI();
+  } else if (activeGame === 'viper') {
+    $('arena-main-title').innerHTML = 'Neon <span>Viper.</span>';
+    $('arena-main-desc').textContent = '16×16 reflex snake. Absorb energy pellets, navigate obstacles, don\'t crash!';
+    if (!viperState) launchViper(false);
+    else { renderViperUI(); startViperLoop(); }
   } else {
     $('arena-main-title').innerHTML = 'Merge <span>Streak.</span>';
     $('arena-main-desc').textContent = '4×4 number merge. Combine matching tiles to reach 2048 and beyond.';
@@ -1166,7 +1521,7 @@ function paintLeaders(list) {
 
 async function refreshLeaderboard() {
   $('rank-date-note').textContent = rankMode === 'daily' ? `UTC challenge · ${dateUTC()}` : 'Verified completed games only';
-  const gameName = rankGame === 'blocks' ? 'Block Collapse' : rankGame === 'cascade' ? 'Color Cascade' : rankGame === 'memory' ? 'Memory Matrix' : 'Merge Streak';
+  const gameName = rankGame === 'blocks' ? 'Block Collapse' : rankGame === 'cascade' ? 'Color Cascade' : rankGame === 'memory' ? 'Memory Matrix' : rankGame === 'viper' ? 'Neon Viper' : 'Merge Streak';
   $('ranking-game-title').textContent = `${gameName} Top 20`;
   const cacheKey = `${rankGame}_${rankMode}`;
   try {
@@ -1258,11 +1613,24 @@ async function boot() {
     hydrateMemoryRun(run, []);
   }
 
+  // Hydrate Neon Viper run
+  const activeViper = online ? activeRuns.find(run => run.gameType === 'viper') : read('ms_demo_viper_run');
+  if (activeViper) {
+    const cache = online ? read(`ms_viper_run_${player.id}_${activeViper.id}`, {}) : activeViper;
+    hydrateViperRun(activeViper, cache.moves || []);
+  } else if (!online) {
+    const run = { id: `guest-viper-${stamp()}`, mode: 'classic', game: 'viper', seed: localSeed(), startedAt: stamp() };
+    hydrateViperRun(run, []);
+  }
+
   renderDashboard();
   renderShop();
   refreshLeaderboard();
 
-  if (urlParamGame === 'memory') {
+  if (urlParamGame === 'viper') {
+    switchGame('viper');
+    setView('play');
+  } else if (urlParamGame === 'memory') {
     switchGame('memory');
     setView('play');
   } else if (urlParamGame === 'cascade') {
@@ -1290,7 +1658,9 @@ for (const button of document.querySelectorAll('[data-launch-game]')) {
   button.addEventListener('click', () => {
     const g = button.dataset.launchGame;
     const m = button.dataset.launchMode || 'classic';
-    if (g === 'memory') {
+    if (g === 'viper') {
+      launchViper(false);
+    } else if (g === 'memory') {
       launchMemory(false);
     } else if (g === 'cascade') {
       launchCascade(false);
@@ -1327,6 +1697,9 @@ for (const button of document.querySelectorAll('[data-rank-game]')) {
 for (const button of document.querySelectorAll('[data-direction]')) {
   button.addEventListener('click', () => takeTurn(button.dataset.direction));
 }
+for (const button of document.querySelectorAll('[data-viper-dir]')) {
+  button.addEventListener('click', () => setViperDirection(button.dataset.viperDir));
+}
 
 $('new-game-btn').addEventListener('click', () => launch(currentMode, true));
 $('bank-btn').addEventListener('click', () => {
@@ -1343,12 +1716,18 @@ $('cascade-bank-btn').addEventListener('click', () => completeCascadeGame());
 $('memory-new-game-btn').addEventListener('click', () => launchMemory(true));
 $('memory-bank-btn').addEventListener('click', () => completeMemoryGame());
 
+$('viper-new-game-btn').addEventListener('click', () => launchViper(true));
+$('viper-bank-btn').addEventListener('click', () => completeViperGame());
+
 $('help-btn').addEventListener('click', () => $('info-dialog').showModal());
 $('refresh-leaders').addEventListener('click', refreshLeaderboard);
 $('dismiss-finish-btn').addEventListener('click', () => { $('finish-dialog').close(); setView('home'); });
 $('play-again-btn').addEventListener('click', () => {
   $('finish-dialog').close();
-  if (lastFinishedGameType === 'memory') {
+  if (lastFinishedGameType === 'viper') {
+    switchGame('viper');
+    launchViper(true);
+  } else if (lastFinishedGameType === 'memory') {
     switchGame('memory');
     launchMemory(true);
   } else if (lastFinishedGameType === 'cascade') {
@@ -1373,11 +1752,23 @@ board.addEventListener('pointerup', e => {
 });
 board.addEventListener('pointercancel', () => swipe = null);
 
+let viperSwipe = null; const vCanvas = $('viper-canvas');
+vCanvas?.addEventListener('pointerdown', e => { viperSwipe = { x: e.clientX, y: e.clientY }; });
+vCanvas?.addEventListener('pointerup', e => {
+  if (!viperSwipe) return; const dx = e.clientX - viperSwipe.x, dy = e.clientY - viperSwipe.y; viperSwipe = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 15) return;
+  setViperDirection(Math.abs(dx) >= Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy > 0 ? 'down' : 'up');
+});
+vCanvas?.addEventListener('pointercancel', () => viperSwipe = null);
+
 document.addEventListener('keydown', e => {
   if ($('info-dialog').open || $('finish-dialog').open || view !== 'play') return;
   if (activeGame === 'merge') {
     const direction = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' }[e.key];
     if (direction) { e.preventDefault(); takeTurn(direction); }
+  } else if (activeGame === 'viper') {
+    const direction = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' }[e.key];
+    if (direction) { e.preventDefault(); setViperDirection(direction); }
   }
 });
 

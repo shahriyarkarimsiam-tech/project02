@@ -38,15 +38,16 @@
       <main class="content">
         <section class="view active" data-view="home" aria-label="Arcade overview">
           <div class="welcome-row"><div><div class="overline"><span class="accent-dot"></span> YOUR PERSONAL ARCADE</div><h1>Play a little.<br/><span>Level up a lot.</span></h1><p>Welcome back, <strong id="welcome-name">Player</strong>. New numbers, new scores, and one fresh challenge every day.</p></div><div class="date-pill"><span>✴</span><span id="today-label">DAILY EDITION</span></div></div>
-          <div class="hero-card"><div class="hero-glow"></div><div class="hero-copy"><span class="eyebrow-pill"><span>✦</span> FEATURED GAMES · ARCADE CLUB</span><h2>Play. Compete.<br/><em>Level up your score.</em></h2><p>Play our signature puzzle games, beat your high scores and unlock new visual themes with the virtual coins you earn.</p><div class="hero-actions"><button class="btn btn-light" data-launch-game="merge" data-launch-mode="classic">▶ &nbsp; Play Merge</button><button class="btn btn-glass" data-launch-game="blocks" data-launch-mode="classic">🧱 &nbsp; Play Blocks</button><button class="btn btn-glass" data-launch-game="cascade" data-launch-mode="classic">🔮 &nbsp; Play Cascade</button><button class="btn btn-glass" data-launch-game="memory" data-launch-mode="classic">🧠 &nbsp; Play Memory</button></div></div><div class="hero-art" aria-hidden="true"><span class="hero-tile tile-a">2</span><span class="hero-tile tile-b">4</span><span class="hero-tile tile-c">8</span><span class="hero-tile tile-d">16</span><span class="hero-tile tile-e">32</span><span class="hero-spark">✦</span></div></div>
+          <div class="hero-card"><div class="hero-glow"></div><div class="hero-copy"><span class="eyebrow-pill"><span>✦</span> FEATURED GAMES · ARCADE CLUB</span><h2>Play. Compete.<br/><em>Level up your score.</em></h2><p>Play our signature puzzle games, beat your high scores and unlock new visual themes with the virtual coins you earn.</p><div class="hero-actions"><button class="btn btn-light" data-launch-game="merge" data-launch-mode="classic">▶ &nbsp; Play Merge</button><button class="btn btn-glass" data-launch-game="blocks" data-launch-mode="classic">🧱 &nbsp; Play Blocks</button><button class="btn btn-glass" data-launch-game="cascade" data-launch-mode="classic">🔮 &nbsp; Play Cascade</button><button class="btn btn-glass" data-launch-game="memory" data-launch-mode="classic">🧠 &nbsp; Play Memory</button><button class="btn btn-glass" data-launch-game="viper" data-launch-mode="classic">🐍 &nbsp; Play Viper</button></div></div><div class="hero-art" aria-hidden="true"><span class="hero-tile tile-a">2</span><span class="hero-tile tile-b">4</span><span class="hero-tile tile-c">8</span><span class="hero-tile tile-d">16</span><span class="hero-tile tile-e">32</span><span class="hero-spark">✦</span></div></div>
           <div class="stats-grid">
             <div class="stat-card"><span class="stat-icon mint">◆</span><div><small>MERGE BEST</small><strong id="home-best">0</strong><span>Highest 2048 score</span></div></div>
             <div class="stat-card"><span class="stat-icon pink">🧱</span><div><small>BLOCKS BEST</small><strong id="home-blocks-best">0</strong><span>Line clearer record</span></div></div>
             <div class="stat-card"><span class="stat-icon purple">🔮</span><div><small>CASCADE BEST</small><strong id="home-cascade-best">0</strong><span>Match-3 record</span></div></div>
             <div class="stat-card"><span class="stat-icon blue">🧠</span><div><small>MEMORY BEST</small><strong id="home-memory-best">0</strong><span>Pattern matrix record</span></div></div>
+            <div class="stat-card"><span class="stat-icon green">🐍</span><div><small>VIPER BEST</small><strong id="home-viper-best">0</strong><span>Reflex snake record</span></div></div>
             <div class="stat-card"><span class="stat-icon amber">⚡</span><div><small>PLAY STREAK</small><strong><span id="home-streak">0</span> <i>days</i></strong><span>Consecutive UTC days</span></div></div>
           </div>
-          <div class="section-head"><div><span class="mini-label">ARCADE COLLECTION</span><h2>Select a Game</h2></div><span class="section-count">4 Playable · 1 Coming Soon</span></div>
+          <div class="section-head"><div><span class="mini-label">ARCADE COLLECTION</span><h2>Select a Game</h2></div><span class="section-count">5 Playable Games · Full Arcade Live!</span></div>
           <div class="arcade-catalog">
             <div class="arcade-card playable">
               <div class="arcade-card-icon mint">🔢</div>
@@ -93,13 +94,15 @@
                 </div>
               </div>
             </div>
-            <div class="arcade-card upcoming">
+            <div class="arcade-card playable">
               <div class="arcade-card-icon green">🐍</div>
               <div class="arcade-card-content">
-                <div class="arcade-card-top"><span class="arcade-badge soon">SOON</span><span class="arcade-tag">Reflex Classic</span></div>
+                <div class="arcade-card-top"><span class="arcade-badge new-badge">● NEW GAME</span><span class="arcade-tag">16×16 Reflex Snake</span></div>
                 <h3>Neon Viper</h3>
-                <p>Retro snake arcade with modern glow effects, speed boosts and obstacle arenas.</p>
-                <button class="btn btn-outline btn-sm" disabled>Coming Soon 🔒</button>
+                <p>Classic retro snake arcade with neon glow aesthetics, energy orbs, and rapid responsive steering!</p>
+                <div class="arcade-card-actions">
+                  <button class="btn btn-primary btn-sm" data-launch-game="viper" data-launch-mode="classic">Play Viper 🐍</button>
+                </div>
               </div>
             </div>
           </div>
@@ -118,6 +121,7 @@
             <button class="game-switch-tab" data-switch-game="blocks" id="switch-blocks-btn"><span class="tab-badge">8×8</span> 🧱 Block Collapse</button>
             <button class="game-switch-tab" data-switch-game="cascade" id="switch-cascade-btn"><span class="tab-badge">7×7</span> 🔮 Color Cascade</button>
             <button class="game-switch-tab" data-switch-game="memory" id="switch-memory-btn"><span class="tab-badge">3×3</span> 🧠 Memory Matrix</button>
+            <button class="game-switch-tab" data-switch-game="viper" id="switch-viper-btn"><span class="tab-badge">16×16</span> 🐍 Neon Viper</button>
           </div>
           <div class="arena-layout">
             <div class="game-surface">
@@ -182,6 +186,38 @@
                 <div class="game-actions"><button class="btn btn-primary" id="memory-new-game-btn">↻ New run</button><button class="btn btn-outline" id="memory-bank-btn" disabled>Finish & save score</button></div>
                 <div class="safety-note">✧ Sharpen your memory! Each cleared round adds one more step to the sequence.</div>
               </div>
+
+              <!-- GAME 5: NEON VIPER (16x16 REFLEX SNAKE) -->
+              <div id="viper-game-view" style="display: none;">
+                <div class="arena-heading"><div><span class="mini-label">16 × 16 REFLEX SNAKE</span><h2>Neon Viper</h2></div><span class="run-state-chip" id="viper-state-chip">READY TO SLITHER</span></div>
+                <div class="score-row">
+                  <div class="score-card"><small>SCORE</small><strong id="viper-score">0</strong></div>
+                  <div class="score-card"><small>PERSONAL BEST</small><strong id="viper-best">0</strong></div>
+                  <div class="score-card"><small>LENGTH</small><strong id="viper-length">3</strong></div>
+                </div>
+                <div class="board-frame viper-board-frame">
+                  <div class="board-top"><span><span class="status-pulse"></span> 16 × 16 ARENA</span><span id="viper-food-counter">0 PELLETS</span></div>
+                  <div class="viper-canvas-wrap">
+                    <canvas id="viper-canvas" width="384" height="384" aria-label="Neon Viper game board"></canvas>
+                  </div>
+                  <div class="board-bottom"><span>ARROW KEYS · D-PAD · SWIPE</span><span id="viper-speed-tag">NORMAL SPEED</span></div>
+                </div>
+                <p class="status-line" id="viper-status" aria-live="polite">Swipe or use arrows/D-pad to steer the viper toward energy pellets.</p>
+                <div class="under-board">
+                  <div class="d-pad" aria-label="Viper directional controls">
+                    <button data-viper-dir="up" class="direction up" aria-label="Steer up">↑</button>
+                    <button data-viper-dir="left" class="direction left" aria-label="Steer left">←</button>
+                    <button data-viper-dir="down" class="direction down" aria-label="Steer down">↓</button>
+                    <button data-viper-dir="right" class="direction right" aria-label="Steer right">→</button>
+                  </div>
+                  <div class="control-description">
+                    <strong>STEER THE VIPER</strong>
+                    <p>Collect glowing energy orbs. Don't hit the neon borders or your own tail!</p>
+                  </div>
+                </div>
+                <div class="game-actions"><button class="btn btn-primary" id="viper-new-game-btn">↻ New run</button><button class="btn btn-outline" id="viper-bank-btn" disabled>Finish & save score</button></div>
+                <div class="safety-note">✧ High-speed reflex action. Grow longer with each orb to score massive points!</div>
+              </div>
             </div>
             <aside class="arena-aside"><div class="surface player-panel"><div class="surface-head"><span class="mini-label">YOUR PLAYER CARD</span><span>✦</span></div><div class="profile-line"><div class="portrait" id="player-avatar">G</div><div><strong id="player-name">Guest player</strong><span id="connection-status">Local practice mode</span></div></div><div class="progress-label"><strong id="rank-title">Rookie explorer</strong><small id="rank-progress">Keep playing</small></div><div class="progress-track"><span id="progress-fill"></span></div><p class="muted-paragraph">Complete games to progress and earn virtual-only coins.</p></div><div class="surface mode-side-card"><span class="mini-label">FEATURED DAILY</span><h3>Same start.<br/>Different strategy.</h3><p>One daily attempt for every Telegram player. The board resets at midnight UTC.</p><button class="text-action" data-launch-game="merge" data-launch-mode="daily">Open daily challenge ↗</button></div><div class="surface ad-panel"><span class="mini-label">REWARDED ADS</span><div class="ad-symbol">✳</div><h3>Optional boosts</h3><p>Coming after network approval and verified ad-completion integration.</p><button class="btn btn-disabled" disabled>Not available yet · 🔒</button></div><div class="tip-card">✦ <span><b>Strategy tip</b>Trigger multi-step chain reactions in Color Cascade for big combo multipliers!</span></div></aside>
           </div>
@@ -195,7 +231,7 @@
             <div class="ranking-top">
               <div><span class="mini-label">THE LEADERBOARD</span><h2 id="ranking-game-title">Merge Streak Top 20</h2></div>
               <div class="ranking-controls">
-                <div class="segmented game-rank-selector"><button class="segment active" data-rank-game="merge">🔢 Merge</button><button class="segment" data-rank-game="blocks">🧱 Blocks</button><button class="segment" data-rank-game="cascade">🔮 Cascade</button><button class="segment" data-rank-game="memory">🧠 Memory</button></div>
+                <div class="segmented game-rank-selector"><button class="segment active" data-rank-game="merge">🔢 Merge</button><button class="segment" data-rank-game="blocks">🧱 Blocks</button><button class="segment" data-rank-game="cascade">🔮 Cascade</button><button class="segment" data-rank-game="memory">🧠 Memory</button><button class="segment" data-rank-game="viper">🐍 Viper</button></div>
                 <div class="segmented"><button class="segment active" data-rank-mode="classic">All-time</button><button class="segment" data-rank-mode="daily">Today UTC</button></div>
               </div>
             </div>
@@ -213,6 +249,7 @@
             <div><span>BLOCKS BEST</span><strong id="profile-blocks-best">0</strong></div>
             <div><span>CASCADE BEST</span><strong id="profile-cascade-best">0</strong></div>
             <div><span>MEMORY BEST</span><strong id="profile-memory-best">0</strong></div>
+            <div><span>VIPER BEST</span><strong id="profile-viper-best">0</strong></div>
             <div><span>DAY STREAK</span><strong id="profile-streak">0</strong></div>
           </div>
           <div class="dashboard-grid"><section class="surface"><div class="surface-head"><span class="mini-label">RECENT HISTORY</span></div><div id="profile-recent" class="recent-list"><div class="empty-state">No saved games yet.</div></div></section><section class="surface"><div class="surface-head"><span class="mini-label">ACHIEVEMENTS</span><button data-view-target="challenges" class="text-action">See all ↗</button></div><div id="profile-badges" class="profile-badges"></div><p class="muted-paragraph">Progress is tied to your Telegram profile when signed in.</p></section></div>
@@ -234,6 +271,7 @@
       <p><b>🧱 Block Collapse (8×8):</b><br/>Tap any shape in your rack, then tap the grid to place it. Complete horizontal rows or vertical columns to clear them. Clear multiple lines together for explosive combo bonuses!</p>
       <p><b>🔮 Color Cascade (7×7):</b><br/>Tap a gem, then tap an adjacent neighbor to swap them. Line up 3 or more matching gems to trigger cascades and build combo multipliers across 30 moves!</p>
       <p><b>🧠 Memory Matrix (3×3):</b><br/>Watch the light sequence flash across the 9 neon pads. When it's your turn, tap the pads in the identical sequence. Clear rounds to earn points and advance. You have 3 lives!</p>
+      <p><b>🐍 Neon Viper (16×16):</b><br/>Steer the neon viper with arrows, D-pad, or swipe gestures to collect energy pellets. Each pellet increases length and score. Avoid crashing into walls or your own tail!</p>
       <p><b>✦ Virtual Coins:</b><br/>Earned by completing games. Use coins to unlock themes in the Theme Shop. Non-transferable, no real money value.</p>
     </div>
     <form method="dialog"><button class="btn btn-primary wide">Got it · Play Now</button></form>
