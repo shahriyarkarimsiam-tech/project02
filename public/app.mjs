@@ -1569,6 +1569,7 @@ async function boot() {
   }
 
   const urlParamGame = new URLSearchParams(window.location.search).get('game');
+  const urlParamMode = new URLSearchParams(window.location.search).get('mode');
 
   // Hydrate Merge Streak run
   const activeMerge = online ? activeRuns.find(run => run.mode === 'classic' && (run.gameType === 'merge' || !run.gameType)) : read('ms_demo_run_classic');
@@ -1627,7 +1628,11 @@ async function boot() {
   renderShop();
   refreshLeaderboard();
 
-  if (urlParamGame === 'viper') {
+  if (urlParamMode === 'daily') {
+    switchGame('merge');
+    launch('daily', false);
+    setView('play');
+  } else if (urlParamGame === 'viper') {
     switchGame('viper');
     setView('play');
   } else if (urlParamGame === 'memory') {
