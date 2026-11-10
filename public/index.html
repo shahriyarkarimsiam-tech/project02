@@ -38,12 +38,65 @@
       <main class="content">
         <section class="view active" data-view="home" aria-label="Arcade overview">
           <div class="welcome-row"><div><div class="overline"><span class="accent-dot"></span> YOUR PERSONAL ARCADE</div><h1>Play a little.<br/><span>Level up a lot.</span></h1><p>Welcome back, <strong id="welcome-name">Player</strong>. New numbers, new scores, and one fresh challenge every day.</p></div><div class="date-pill"><span>✴</span><span id="today-label">DAILY EDITION</span></div></div>
-          <div class="hero-card"><div class="hero-glow"></div><div class="hero-copy"><span class="eyebrow-pill"><span>✦</span> FEATURED GAME · ORIGINAL PUZZLE</span><h2>Make your<br/><em>next move count.</em></h2><p>Merge matching numbers, beat your high score and unlock new visual themes with the coins you earn.</p><div class="hero-actions"><button class="btn btn-light" data-launch-mode="classic">▶ &nbsp; Play classic</button><button class="btn btn-glass" data-launch-mode="daily">⚡ &nbsp; Daily challenge</button></div></div><div class="hero-art" aria-hidden="true"><span class="hero-tile tile-a">2</span><span class="hero-tile tile-b">4</span><span class="hero-tile tile-c">8</span><span class="hero-tile tile-d">16</span><span class="hero-tile tile-e">32</span><span class="hero-spark">✦</span></div></div>
+          <div class="hero-card"><div class="hero-glow"></div><div class="hero-copy"><span class="eyebrow-pill"><span>✦</span> FEATURED GAMES · ARCADE CLUB</span><h2>Play. Compete.<br/><em>Level up your score.</em></h2><p>Play our signature puzzle games, beat your high scores and unlock new visual themes with the virtual coins you earn.</p><div class="hero-actions"><button class="btn btn-light" data-launch-game="merge" data-launch-mode="classic">▶ &nbsp; Play Merge Streak</button><button class="btn btn-glass" data-launch-game="blocks" data-launch-mode="classic">🧱 &nbsp; Play Block Collapse</button></div></div><div class="hero-art" aria-hidden="true"><span class="hero-tile tile-a">2</span><span class="hero-tile tile-b">4</span><span class="hero-tile tile-c">8</span><span class="hero-tile tile-d">16</span><span class="hero-tile tile-e">32</span><span class="hero-spark">✦</span></div></div>
           <div class="stats-grid">
-            <div class="stat-card"><span class="stat-icon mint">◆</span><div><small>PERSONAL BEST</small><strong id="home-best">0</strong><span>Highest verified score</span></div></div>
-            <div class="stat-card"><span class="stat-icon pink">◈</span><div><small>GAMES FINISHED</small><strong id="home-games">0</strong><span>Completed runs</span></div></div>
+            <div class="stat-card"><span class="stat-icon mint">◆</span><div><small>MERGE BEST</small><strong id="home-best">0</strong><span>Highest 2048 score</span></div></div>
+            <div class="stat-card"><span class="stat-icon pink">🧱</span><div><small>BLOCKS BEST</small><strong id="home-blocks-best">0</strong><span>Line clearer record</span></div></div>
             <div class="stat-card"><span class="stat-icon amber">⚡</span><div><small>PLAY STREAK</small><strong><span id="home-streak">0</span> <i>days</i></strong><span>Consecutive UTC days</span></div></div>
-            <div class="stat-card"><span class="stat-icon blue">✳</span><div><small>BEST TILE</small><strong id="home-tile">0</strong><span>Biggest number merged</span></div></div>
+            <div class="stat-card"><span class="stat-icon blue">◈</span><div><small>GAMES FINISHED</small><strong id="home-games">0</strong><span>Completed arcade runs</span></div></div>
+          </div>
+          <div class="section-head"><div><span class="mini-label">ARCADE COLLECTION</span><h2>Select a Game</h2></div><span class="section-count">2 Playable · 3 Coming Soon</span></div>
+          <div class="arcade-catalog">
+            <div class="arcade-card playable">
+              <div class="arcade-card-icon mint">🔢</div>
+              <div class="arcade-card-content">
+                <div class="arcade-card-top"><span class="arcade-badge live">● LIVE NOW</span><span class="arcade-tag">4×4 Number Merge</span></div>
+                <h3>Merge Streak</h3>
+                <p>Swipe matching tiles, double your numbers and build toward the ultimate 2048+ tile in classic or daily challenge.</p>
+                <div class="arcade-card-actions">
+                  <button class="btn btn-primary btn-sm" data-launch-game="merge" data-launch-mode="classic">Play Classic ▶</button>
+                  <button class="btn btn-outline btn-sm" data-launch-game="merge" data-launch-mode="daily">Daily ⚡</button>
+                </div>
+              </div>
+            </div>
+            <div class="arcade-card playable">
+              <div class="arcade-card-icon amber">🧱</div>
+              <div class="arcade-card-content">
+                <div class="arcade-card-top"><span class="arcade-badge new-badge">● NEW GAME</span><span class="arcade-tag">8×8 Line Clearer</span></div>
+                <h3>Block Collapse</h3>
+                <p>Drop polyomino shapes onto the 8×8 board. Complete horizontal rows and vertical columns to trigger explosive combos!</p>
+                <div class="arcade-card-actions">
+                  <button class="btn btn-primary btn-sm" data-launch-game="blocks" data-launch-mode="classic">Play Blocks 🧱</button>
+                </div>
+              </div>
+            </div>
+            <div class="arcade-card upcoming">
+              <div class="arcade-card-icon purple">🔮</div>
+              <div class="arcade-card-content">
+                <div class="arcade-card-top"><span class="arcade-badge soon">SOON</span><span class="arcade-tag">Match-3</span></div>
+                <h3>Color Cascade</h3>
+                <p>Swap vibrant gems to clear chains, trigger cascades and collect mega multiplier tokens.</p>
+                <button class="btn btn-outline btn-sm" disabled>Coming Soon 🔒</button>
+              </div>
+            </div>
+            <div class="arcade-card upcoming">
+              <div class="arcade-card-icon blue">🧠</div>
+              <div class="arcade-card-content">
+                <div class="arcade-card-top"><span class="arcade-badge soon">SOON</span><span class="arcade-tag">Memory Puzzle</span></div>
+                <h3>Memory Matrix</h3>
+                <p>Repeat expanding geometric sequences to test your working memory and reaction speed.</p>
+                <button class="btn btn-outline btn-sm" disabled>Coming Soon 🔒</button>
+              </div>
+            </div>
+            <div class="arcade-card upcoming">
+              <div class="arcade-card-icon green">🐍</div>
+              <div class="arcade-card-content">
+                <div class="arcade-card-top"><span class="arcade-badge soon">SOON</span><span class="arcade-tag">Reflex Classic</span></div>
+                <h3>Neon Viper</h3>
+                <p>Retro snake arcade with modern glow effects, speed boosts and obstacle arenas.</p>
+                <button class="btn btn-outline btn-sm" disabled>Coming Soon 🔒</button>
+              </div>
+            </div>
           </div>
           <div class="dashboard-grid">
             <section class="surface daily-feature"><div class="surface-head"><span class="mini-label">⚡ TODAY'S CHALLENGE</span><span class="soft-chip" id="daily-home-tag">NOT STARTED</span></div><h3>One board.<br/>One chance today.</h3><p>Everyone with a Telegram account gets the same seeded puzzle for the UTC day. Save your run to join today's rankings.</p><div class="daily-feature-foot"><button class="btn btn-primary" data-launch-mode="daily" id="daily-home-btn">Play daily puzzle <span>↗</span></button><span id="daily-day-label">Resets at 00:00 UTC</span></div></section>
@@ -53,27 +106,96 @@
           <div class="discovery-grid"><button class="discovery-card" data-view-target="rankings"><span class="discovery-symbol lavender">♛</span><span><strong>Hall of fame</strong><small>Challenge the top scores</small></span><b>↗</b></button><button class="discovery-card" data-view-target="shop"><span class="discovery-symbol golden">✦</span><span><strong>Theme shop</strong><small>Spend your virtual coins</small></span><b>↗</b></button><button class="discovery-card" data-view-target="challenges"><span class="discovery-symbol aqua">⚡</span><span><strong>Achievements</strong><small>Collect meaningful milestones</small></span><b>↗</b></button></div>
         </section>
 
-        <section class="view" data-view="play" aria-label="Play Merge Streak">
-          <div class="page-heading"><div><span class="mini-label">THE GAME ARENA</span><h1>Merge <span>Streak.</span></h1><p>Every swipe counts. Keep combining. Beat yourself.</p></div><button class="btn btn-outline" id="help-btn">? How to play</button></div>
-          <div class="arena-layout"><div class="game-surface"><div class="mode-tabs" role="group" aria-label="Game mode"><button class="mode-tab active" data-mode="classic">◈ Classic run</button><button class="mode-tab" data-mode="daily">⚡ Daily challenge</button></div><div class="arena-heading"><div><span class="mini-label" id="run-mode-heading">CLASSIC MODE</span><h2 id="run-title">Your next high score</h2></div><span class="run-state-chip" id="game-state-chip">READY TO PLAY</span></div><div class="score-row"><div class="score-card"><small>SCORE</small><strong id="score">0</strong></div><div class="score-card"><small>PERSONAL BEST</small><strong id="best-score">0</strong></div><div class="score-card"><small>MOVES</small><strong id="move-count">0</strong></div></div><div class="board-frame"><div class="board-top"><span><span class="status-pulse"></span> LIVE BOARD</span><span>4 × 4 GRID</span></div><div class="game-board" id="game-board" role="grid" aria-label="Number merging puzzle board"></div><div class="board-bottom"><span id="largest-tile">TOP TILE · 2</span><span>MERGE TO GROW ↗</span></div></div><p class="status-line" id="game-status" aria-live="polite">Swipe or use the arrow keys to play.</p><div class="under-board"><div class="d-pad" aria-label="Directional controls"><button data-direction="up" class="direction up" aria-label="Slide up">↑</button><button data-direction="left" class="direction left" aria-label="Slide left">←</button><button data-direction="down" class="direction down" aria-label="Slide down">↓</button><button data-direction="right" class="direction right" aria-label="Slide right">→</button></div><div class="control-description"><strong>MOVE THE TILES</strong><p>Swipe on the board or tap the directional controls.</p></div></div><div class="game-actions"><button class="btn btn-primary" id="new-game-btn">↻ New run</button><button class="btn btn-outline" id="bank-btn" disabled>Finish & save score</button></div><div class="safety-note">✧ Free to play. No ads required. Coins cannot be withdrawn or exchanged.</div></div>
-            <aside class="arena-aside"><div class="surface player-panel"><div class="surface-head"><span class="mini-label">YOUR PLAYER CARD</span><span>✦</span></div><div class="profile-line"><div class="portrait" id="player-avatar">G</div><div><strong id="player-name">Guest player</strong><span id="connection-status">Local practice mode</span></div></div><div class="progress-label"><strong id="rank-title">Rookie explorer</strong><small id="rank-progress">Keep playing</small></div><div class="progress-track"><span id="progress-fill"></span></div><p class="muted-paragraph">Complete games to progress and earn virtual-only coins.</p></div><div class="surface mode-side-card"><span class="mini-label">TODAY'S PUZZLE</span><h3>Same start.<br/>Different strategy.</h3><p>One daily attempt for every Telegram player. The board resets at midnight UTC.</p><button class="text-action" data-launch-mode="daily">Open daily challenge ↗</button></div><div class="surface ad-panel"><span class="mini-label">REWARDED ADS</span><div class="ad-symbol">✳</div><h3>Optional boosts</h3><p>Coming after network approval and verified ad-completion integration.</p><button class="btn btn-disabled" disabled>Not available yet · 🔒</button></div><div class="tip-card">✦ <span><b>Strategy tip</b>Keep your biggest tile in one corner and merge in a consistent direction.</span></div></aside></div>
+        <section class="view" data-view="play" aria-label="Arcade Games Arena">
+          <div class="page-heading"><div><span class="mini-label">THE ARCADE ARENA</span><h1 id="arena-main-title">Arcade <span>Arena.</span></h1><p id="arena-main-desc">Pick your game, place your moves and beat your personal record.</p></div><button class="btn btn-outline" id="help-btn">? How to play</button></div>
+          <div class="game-switcher" role="tablist" aria-label="Game Switcher">
+            <button class="game-switch-tab active" data-switch-game="merge" id="switch-merge-btn"><span class="tab-badge">4×4</span> 🔢 Merge Streak</button>
+            <button class="game-switch-tab" data-switch-game="blocks" id="switch-blocks-btn"><span class="tab-badge">8×8</span> 🧱 Block Collapse</button>
+          </div>
+          <div class="arena-layout">
+            <div class="game-surface">
+              <!-- GAME 1: MERGE STREAK (4x4) -->
+              <div id="merge-game-view">
+                <div class="mode-tabs" role="group" aria-label="Game mode"><button class="mode-tab active" data-mode="classic">◈ Classic run</button><button class="mode-tab" data-mode="daily">⚡ Daily challenge</button></div>
+                <div class="arena-heading"><div><span class="mini-label" id="run-mode-heading">CLASSIC MODE</span><h2 id="run-title">Your next high score</h2></div><span class="run-state-chip" id="game-state-chip">READY TO PLAY</span></div>
+                <div class="score-row"><div class="score-card"><small>SCORE</small><strong id="score">0</strong></div><div class="score-card"><small>PERSONAL BEST</small><strong id="best-score">0</strong></div><div class="score-card"><small>MOVES</small><strong id="move-count">0</strong></div></div>
+                <div class="board-frame"><div class="board-top"><span><span class="status-pulse"></span> LIVE BOARD</span><span>4 × 4 GRID</span></div><div class="game-board" id="game-board" role="grid" aria-label="Number merging puzzle board"></div><div class="board-bottom"><span id="largest-tile">TOP TILE · 2</span><span>MERGE TO GROW ↗</span></div></div>
+                <p class="status-line" id="game-status" aria-live="polite">Swipe or use arrow keys to combine tiles.</p>
+                <div class="under-board"><div class="d-pad" aria-label="Directional controls"><button data-direction="up" class="direction up" aria-label="Slide up">↑</button><button data-direction="left" class="direction left" aria-label="Slide left">←</button><button data-direction="down" class="direction down" aria-label="Slide down">↓</button><button data-direction="right" class="direction right" aria-label="Slide right">→</button></div><div class="control-description"><strong>MOVE THE TILES</strong><p>Swipe on the board or tap the directional controls.</p></div></div>
+                <div class="game-actions"><button class="btn btn-primary" id="new-game-btn">↻ New run</button><button class="btn btn-outline" id="bank-btn" disabled>Finish & save score</button></div>
+                <div class="safety-note">✧ Free to play. Combine matching numbers to double their value.</div>
+              </div>
+
+              <!-- GAME 2: BLOCK COLLAPSE (8x8) -->
+              <div id="blocks-game-view" style="display: none;">
+                <div class="arena-heading"><div><span class="mini-label">8 × 8 LINE CLEARER</span><h2>Block Collapse</h2></div><span class="run-state-chip" id="blocks-state-chip">READY TO PLACE</span></div>
+                <div class="score-row"><div class="score-card"><small>SCORE</small><strong id="blocks-score">0</strong></div><div class="score-card"><small>PERSONAL BEST</small><strong id="blocks-best">0</strong></div><div class="score-card"><small>LINES CLEARED</small><strong id="blocks-lines">0</strong></div></div>
+                <div class="board-frame blocks-board-frame">
+                  <div class="board-top"><span><span class="status-pulse"></span> 8 × 8 BOARD</span><span id="blocks-streak-tag">COMBO 0×</span></div>
+                  <div class="blocks-board" id="blocks-board" role="grid" aria-label="8x8 block puzzle board"></div>
+                  <div class="board-bottom"><span>TAP PIECE · TAP BOARD</span><span id="blocks-moves-counter">0 MOVES</span></div>
+                </div>
+                <div class="blocks-rack-section">
+                  <div class="rack-header-row"><span class="mini-label">PIECES TO PLACE (TAP TO SELECT)</span><small id="blocks-rack-info">3 pieces</small></div>
+                  <div class="blocks-rack" id="blocks-rack" role="group" aria-label="Available shapes rack"></div>
+                </div>
+                <p class="status-line" id="blocks-status" aria-live="polite">Tap a block above, then tap on the grid to place it.</p>
+                <div class="game-actions"><button class="btn btn-primary" id="blocks-new-game-btn">↻ New run</button><button class="btn btn-outline" id="blocks-bank-btn" disabled>Finish & save score</button></div>
+                <div class="safety-note">✧ Fill full rows or columns to clear them and trigger combo streaks!</div>
+              </div>
+            </div>
+            <aside class="arena-aside"><div class="surface player-panel"><div class="surface-head"><span class="mini-label">YOUR PLAYER CARD</span><span>✦</span></div><div class="profile-line"><div class="portrait" id="player-avatar">G</div><div><strong id="player-name">Guest player</strong><span id="connection-status">Local practice mode</span></div></div><div class="progress-label"><strong id="rank-title">Rookie explorer</strong><small id="rank-progress">Keep playing</small></div><div class="progress-track"><span id="progress-fill"></span></div><p class="muted-paragraph">Complete games to progress and earn virtual-only coins.</p></div><div class="surface mode-side-card"><span class="mini-label">FEATURED DAILY</span><h3>Same start.<br/>Different strategy.</h3><p>One daily attempt for every Telegram player. The board resets at midnight UTC.</p><button class="text-action" data-launch-game="merge" data-launch-mode="daily">Open daily challenge ↗</button></div><div class="surface ad-panel"><span class="mini-label">REWARDED ADS</span><div class="ad-symbol">✳</div><h3>Optional boosts</h3><p>Coming after network approval and verified ad-completion integration.</p><button class="btn btn-disabled" disabled>Not available yet · 🔒</button></div><div class="tip-card">✦ <span><b>Strategy tip</b>Clear multiple lines at once in Block Collapse to multiply your score!</span></div></aside>
+          </div>
         </section>
 
-        <section class="view" data-view="challenges" aria-label="Challenges and achievements"><div class="page-heading"><div><span class="mini-label">YOUR QUEST LOG</span><h1>Make progress.<br/><span>Every day.</span></h1><p>Daily competition and milestones you can actually track.</p></div></div><div class="challenge-hero"><div><span class="eyebrow-pill">⚡ DAILY MISSION</span><h2>Same puzzle. One attempt.</h2><p id="challenge-day-caption">Play today's seeded challenge and post a real score to the daily leaderboard.</p><button class="btn btn-light" data-launch-mode="daily" id="challenge-go">Start daily challenge ↗</button></div><div class="challenge-visual">24<small>HOURS</small></div></div><div class="section-head"><div><span class="mini-label">ACHIEVEMENT TRACKER</span><h2>Milestones</h2></div><span class="section-count" id="badge-count">0 / 6 unlocked</span></div><div class="badges-grid" id="badges-list"></div></section>
+        <section class="view" data-view="challenges" aria-label="Challenges and achievements"><div class="page-heading"><div><span class="mini-label">YOUR QUEST LOG</span><h1>Make progress.<br/><span>Every day.</span></h1><p>Daily competition and milestones you can actually track.</p></div></div><div class="challenge-hero"><div><span class="eyebrow-pill">⚡ DAILY MISSION</span><h2>Same puzzle. One attempt.</h2><p id="challenge-day-caption">Play today's seeded challenge and post a real score to the daily leaderboard.</p><button class="btn btn-light" data-launch-game="merge" data-launch-mode="daily" id="challenge-go">Start daily challenge ↗</button></div><div class="challenge-visual">24<small>HOURS</small></div></div><div class="section-head"><div><span class="mini-label">ACHIEVEMENT TRACKER</span><h2>Milestones</h2></div><span class="section-count" id="badge-count">0 / 6 unlocked</span></div><div class="badges-grid" id="badges-list"></div></section>
 
-        <section class="view" data-view="rankings" aria-label="Leaderboards"><div class="page-heading"><div><span class="mini-label">COMPETE FOR FUN</span><h1>Hall of <span>fame.</span></h1><p>Every ranked score is checked by the game server.</p></div></div><div class="surface ranking-surface"><div class="ranking-top"><div><span class="mini-label">THE LEADERBOARD</span><h2>Top 20 players</h2></div><div class="segmented"><button class="segment active" data-rank-mode="classic">All-time</button><button class="segment" data-rank-mode="daily">Today UTC</button></div></div><div class="ranking-titles"><span>RANK / PLAYER</span><span>SCORE</span></div><div class="leaderboard" id="leaderboard"><div class="empty-state">Online rankings appear after real Telegram players save scores.</div></div><div class="leaderboard-footer"><span id="rank-date-note">Verified completed games only</span><button class="text-action" id="refresh-leaders">↻ Refresh rankings</button></div></div></section>
+        <section class="view" data-view="rankings" aria-label="Leaderboards">
+          <div class="page-heading"><div><span class="mini-label">COMPETE FOR FUN</span><h1>Hall of <span>fame.</span></h1><p>Every ranked score is checked by the game server.</p></div></div>
+          <div class="surface ranking-surface">
+            <div class="ranking-top">
+              <div><span class="mini-label">THE LEADERBOARD</span><h2 id="ranking-game-title">Merge Streak Top 20</h2></div>
+              <div class="ranking-controls">
+                <div class="segmented game-rank-selector"><button class="segment active" data-rank-game="merge">🔢 Merge</button><button class="segment" data-rank-game="blocks">🧱 Blocks</button></div>
+                <div class="segmented"><button class="segment active" data-rank-mode="classic">All-time</button><button class="segment" data-rank-mode="daily">Today UTC</button></div>
+              </div>
+            </div>
+            <div class="ranking-titles"><span>RANK / PLAYER</span><span>SCORE</span></div>
+            <div class="leaderboard" id="leaderboard"><div class="empty-state">Online rankings appear after real Telegram players save scores.</div></div>
+            <div class="leaderboard-footer"><span id="rank-date-note">Verified completed games only</span><button class="text-action" id="refresh-leaders">↻ Refresh rankings</button></div>
+          </div>
+        </section>
 
         <section class="view" data-view="shop" aria-label="Virtual theme shop"><div class="page-heading"><div><span class="mini-label">CUSTOMIZE YOUR ARCADE</span><h1>A fresh <span>look.</span></h1><p>Use coins earned from games to unlock visual themes. They do not affect your score.</p></div><div class="wallet-total"><span>YOUR WALLET</span><strong>✦ <span id="shop-balance">0</span></strong><small>Virtual coins · no cash value</small></div></div><div class="shop-notice">✧ All purchases here use free, non-transferable game coins. There are no real-money purchases.</div><div class="themes-grid" id="theme-list"></div></section>
 
-        <section class="view" data-view="profile" aria-label="My player profile"><div class="page-heading"><div><span class="mini-label">PLAYER IDENTITY</span><h1>Your <span>journey.</span></h1><p>Your personal progress, stats, and past victories.</p></div></div><div class="profile-banner"><div class="profile-banner-avatar" id="profile-big-avatar">G</div><div class="profile-banner-copy"><span class="mini-label">ARCADE PLAYER</span><h2 id="profile-display-name">Guest player</h2><p id="profile-login-status">Practice progress is stored only in this browser.</p></div><span class="profile-banner-deco">✦</span></div><div class="profile-stats-grid"><div><span>BEST SCORE</span><strong id="profile-best">0</strong></div><div><span>GAMES PLAYED</span><strong id="profile-games">0</strong></div><div><span>TOP TILE</span><strong id="profile-tile">0</strong></div><div><span>DAY STREAK</span><strong id="profile-streak">0</strong></div></div><div class="dashboard-grid"><section class="surface"><div class="surface-head"><span class="mini-label">RECENT HISTORY</span></div><div id="profile-recent" class="recent-list"><div class="empty-state">No saved games yet.</div></div></section><section class="surface"><div class="surface-head"><span class="mini-label">ACHIEVEMENTS</span><button data-view-target="challenges" class="text-action">See all ↗</button></div><div id="profile-badges" class="profile-badges"></div><p class="muted-paragraph">Progress is tied to your Telegram profile when signed in.</p></section></div></section>
+        <section class="view" data-view="profile" aria-label="My player profile"><div class="page-heading"><div><span class="mini-label">PLAYER IDENTITY</span><h1>Your <span>journey.</span></h1><p>Your personal progress, stats, and past victories.</p></div></div><div class="profile-banner"><div class="profile-banner-avatar" id="profile-big-avatar">G</div><div class="profile-banner-copy"><span class="mini-label">ARCADE PLAYER</span><h2 id="profile-display-name">Guest player</h2><p id="profile-login-status">Practice progress is stored only in this browser.</p></div><span class="profile-banner-deco">✦</span></div>
+          <div class="profile-stats-grid">
+            <div><span>MERGE BEST</span><strong id="profile-best">0</strong></div>
+            <div><span>BLOCKS BEST</span><strong id="profile-blocks-best">0</strong></div>
+            <div><span>GAMES PLAYED</span><strong id="profile-games">0</strong></div>
+            <div><span>DAY STREAK</span><strong id="profile-streak">0</strong></div>
+          </div>
+          <div class="dashboard-grid"><section class="surface"><div class="surface-head"><span class="mini-label">RECENT HISTORY</span></div><div id="profile-recent" class="recent-list"><div class="empty-state">No saved games yet.</div></div></section><section class="surface"><div class="surface-head"><span class="mini-label">ACHIEVEMENTS</span><button data-view-target="challenges" class="text-action">See all ↗</button></div><div id="profile-badges" class="profile-badges"></div><p class="muted-paragraph">Progress is tied to your Telegram profile when signed in.</p></section></div>
+        </section>
       </main>
-      <footer class="site-footer"><span>MERGE STREAK ARCADE <b>/</b> EARLY ACCESS v0.2</span><span>Made for play, not cash earnings · <button data-view-target="profile">Your progress ↗</button></span></footer>
+      <footer class="site-footer"><span>MERGE STREAK ARCADE <b>/</b> MULTI-GAME v0.3</span><span>Made for play, not cash earnings · <button data-view-target="profile">Your progress ↗</button></span></footer>
     </div>
   </div>
 
   <nav class="bottom-nav" aria-label="Mobile navigation"><button class="active" data-view-target="home"><span>⌂</span>Home</button><button data-view-target="play"><span>◈</span>Play</button><button data-view-target="challenges"><span>⚡</span>Quests</button><button data-view-target="rankings"><span>♛</span>Ranks</button><button data-view-target="shop"><span>✦</span>Shop</button></nav>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <dialog id="info-dialog" class="game-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form><div class="modal-glyph">◈</div><span class="mini-label">GAME RULES</span><h2>Merge your way up.</h2><p>Swipe or use arrow controls to move the tiles. Matching numbers merge into one larger number and add their value to your score.</p><p><b>Classic mode:</b> Save your run any time after two moves. <b>Daily:</b> One seeded attempt per UTC day on Telegram. Finishing the daily run uses up today's entry.</p><p><b>Coins:</b> Earned after verified game saves and only redeemable for cosmetic themes. No money value or withdrawals.</p><form method="dialog"><button class="btn btn-primary wide">Got it · Play</button></form></dialog>
+  <dialog id="info-dialog" class="game-dialog">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <div class="modal-glyph">🎮</div>
+    <span class="mini-label">ARCADE RULES</span>
+    <h2>How to play</h2>
+    <div style="text-align: left; font-size: 12px; line-height: 1.6; margin-top: 10px;">
+      <p><b>🔢 Merge Streak (4×4):</b><br/>Swipe or use arrow keys to combine matching numbers (2+2=4, 4+4=8...). Keep building toward 2048+!</p>
+      <p><b>🧱 Block Collapse (8×8):</b><br/>Tap any shape in your rack, then tap the grid to place it. Complete horizontal rows or vertical columns to clear them. Clear multiple lines together for explosive combo bonuses!</p>
+      <p><b>✦ Virtual Coins:</b><br/>Earned by completing games. Use coins to unlock themes in the Theme Shop. Non-transferable, no real money value.</p>
+    </div>
+    <form method="dialog"><button class="btn btn-primary wide">Got it · Play Now</button></form>
+  </dialog>
   <dialog id="finish-dialog" class="game-dialog finish-dialog"><div class="modal-glyph">★</div><span class="mini-label">RUN COMPLETED</span><h2 id="finish-title">Run saved!</h2><div class="finish-stats"><div><small>YOUR SCORE</small><strong id="final-score">0</strong></div><div><small>COINS EARNED</small><strong id="final-coins">+0</strong></div></div><p id="finish-caption">Your progress counts.</p><button class="btn btn-primary wide" id="play-again-btn">Play again ↻</button><button class="dialog-link" id="dismiss-finish-btn">Back to arcade</button></dialog>
 </body>
 </html>

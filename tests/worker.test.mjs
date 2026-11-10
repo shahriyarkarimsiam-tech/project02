@@ -23,3 +23,34 @@ test('auth fails closed when secrets or D1 are missing', async () => {
   }), {});
   assert.equal(response.status, 503);
 });
+
+test('webhook endpoint responds ok to telegram messages', async () => {
+  const response = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ update_id: 1, message: { chat: { id: 100 }, text: '/start' } })
+  }), { BOT_TOKEN: 'fake_bot_token' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+});
+
+test('leaderboard returns blocks leaders with mocked D1', async () => {
+  const mockDB = {
+    prepare(query) {
+      assert(query.includes('best_blocks_score') || query.includes('blocks'));
+      return {
+        async all() {
+          return { results: [{ name: 'Alice', score: 450 }] };
+        }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request('https://example.com/api/leaderboard?game=blocks&mode=classic'), { DB: mockDB });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.game, 'blocks');
+  assert.equal(data.mode, 'classic');
+  assert.deepEqual(data.leaders, [{ name: 'Alice', score: 450 }]);
+});
+
+

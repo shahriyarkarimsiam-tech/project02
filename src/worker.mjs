@@ -1,4 +1,5 @@
 import { replay, coinsForScore } from '../public/engine.mjs';
+import { replayBlocks, coinsForBlocksScore } from '../public/blocks-engine.mjs';
 import { THEMES } from '../public/catalog.mjs';
 import { validateTelegramInitData, mintSession, verifySession, getCookie } from './auth.mjs';
 
@@ -43,11 +44,11 @@ function currentStreak(days) {
 }
 async function userProfile(env, uid) {
   const [player, themed, active, days, recent, daily] = await Promise.all([
-    env.DB.prepare('SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile, games_played AS gamesPlayed, equipped_theme AS equippedTheme FROM players WHERE id=?').bind(uid).first(),
+    env.DB.prepare('SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile, games_played AS gamesPlayed, equipped_theme AS equippedTheme, COALESCE(best_blocks_score, 0) AS bestBlocksScore FROM players WHERE id=?').bind(uid).first(),
     env.DB.prepare('SELECT theme_id AS id FROM player_themes WHERE player_id=?').bind(uid).all(),
-    env.DB.prepare('SELECT id, seed, mode, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
+    env.DB.prepare('SELECT id, seed, mode, COALESCE(game_type, "merge") AS gameType, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
     env.DB.prepare("SELECT DISTINCT date(finished_at,'unixepoch') AS day FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY day DESC LIMIT 40").bind(uid).all(),
-    env.DB.prepare('SELECT score, mode, finished_at AS finishedAt FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 5').bind(uid).all(),
+    env.DB.prepare('SELECT score, mode, COALESCE(game_type, "merge") AS gameType, finished_at AS finishedAt FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 5').bind(uid).all(),
     env.DB.prepare('SELECT id, finished_at AS finishedAt, score FROM games WHERE player_id=? AND mode=? AND challenge_day=? LIMIT 1').bind(uid, 'daily', todayUTC()).first()
   ]);
   if (!player) return null;
@@ -68,15 +69,18 @@ async function handleTelegramWebhook(request, env) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nMerge matching numbers, beat your high scores, complete daily challenges, and earn virtual coins to unlock custom cosmetic themes!\n\n👇 Tap below to start playing:`,
+        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n\n👇 Tap below to start playing:`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '▶️ Play Merge Streak', web_app: { url: appUrl } }
+              { text: '🔢 Play Merge Streak', web_app: { url: `${appUrl}?game=merge` } }
             ],
             [
-              { text: '⚡ Daily Challenge', web_app: { url: appUrl } }
+              { text: '🧱 Play Block Collapse', web_app: { url: `${appUrl}?game=blocks` } }
+            ],
+            [
+              { text: '⚡ Daily Challenge', web_app: { url: `${appUrl}?mode=daily` } }
             ]
           ]
         }
@@ -116,13 +120,22 @@ async function route(request, env) {
   }
   if (method === 'GET' && path === '/api/leaderboard') {
     if (!env.DB) return fail(503, 'Database unavailable');
+    const gameType = url.searchParams.get('game') === 'blocks' ? 'blocks' : 'merge';
     const isDaily = url.searchParams.get('mode') === 'daily';
-    const query = isDaily
-      ? env.DB.prepare(`SELECT p.display_name AS name,g.score AS score FROM games g JOIN players p ON p.id=g.player_id
-           WHERE g.mode='daily' AND g.challenge_day=? AND g.finished_at IS NOT NULL ORDER BY g.score DESC,g.finished_at ASC LIMIT 20`).bind(todayUTC())
-      : env.DB.prepare('SELECT display_name AS name,best_score AS score FROM players WHERE best_score>0 ORDER BY best_score DESC,created_at ASC LIMIT 20');
+    let query;
+    if (gameType === 'blocks') {
+      query = isDaily
+        ? env.DB.prepare(`SELECT p.display_name AS name, g.score AS score FROM games g JOIN players p ON p.id=g.player_id
+             WHERE g.game_type='blocks' AND g.mode='daily' AND g.challenge_day=? AND g.finished_at IS NOT NULL ORDER BY g.score DESC, g.finished_at ASC LIMIT 20`).bind(todayUTC())
+        : env.DB.prepare('SELECT display_name AS name, best_blocks_score AS score FROM players WHERE best_blocks_score>0 ORDER BY best_blocks_score DESC, created_at ASC LIMIT 20');
+    } else {
+      query = isDaily
+        ? env.DB.prepare(`SELECT p.display_name AS name, g.score AS score FROM games g JOIN players p ON p.id=g.player_id
+             WHERE (g.game_type='merge' OR g.game_type IS NULL) AND g.mode='daily' AND g.challenge_day=? AND g.finished_at IS NOT NULL ORDER BY g.score DESC, g.finished_at ASC LIMIT 20`).bind(todayUTC())
+        : env.DB.prepare('SELECT display_name AS name, best_score AS score FROM players WHERE best_score>0 ORDER BY best_score DESC, created_at ASC LIMIT 20');
+    }
     const { results } = await query.all();
-    return json({ mode:isDaily?'daily':'classic', day:isDaily?todayUTC():null, leaders:results||[] });
+    return json({ game: gameType, mode: isDaily ? 'daily' : 'classic', day: isDaily ? todayUTC() : null, leaders: results || [] });
   }
   if (path.startsWith('/api/')) {
     const uid = await getUser(request,env);
@@ -133,53 +146,74 @@ async function route(request, env) {
     }
     if (method==='POST' && path==='/api/game/start') {
       const input = await bodyJSON(request);
+      const gameType = input.game === 'blocks' ? 'blocks' : 'merge';
       const mode = input.mode ?? 'classic';
       if (mode!=='classic' && mode!=='daily') return fail(400,'Unknown game mode');
       const stamp=now(), day=todayUTC();
       if (mode==='daily') {
-        const already = await env.DB.prepare('SELECT id,seed,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE player_id=? AND mode=? AND challenge_day=?').bind(uid,'daily',day).first();
+        const already = await env.DB.prepare('SELECT id,seed,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE player_id=? AND game_type=? AND mode=? AND challenge_day=?').bind(uid,gameType,'daily',day).first();
         if (already?.finishedAt) return fail(409,'Daily challenge already completed; return tomorrow (UTC).');
-        if (already) return json({ id:already.id,seed:already.seed,startedAt:already.startedAt,mode,challengeDay:day,reused:true });
+        if (already) return json({ id:already.id,seed:already.seed,startedAt:already.startedAt,mode,game:gameType,challengeDay:day,reused:true });
       }
       const recent = await env.DB.prepare('SELECT COUNT(*) AS total FROM games WHERE player_id=? AND started_at>?').bind(uid,stamp-600).first();
-      if ((recent?.total||0)>=10) return fail(429,'Too many game starts. Try again later.');
+      if ((recent?.total||0)>=20) return fail(429,'Too many game starts. Try again later.');
       const id=crypto.randomUUID(), random=new Uint32Array(1); crypto.getRandomValues(random);
-      const seed=mode==='daily'?await dailySeed(env.SESSION_SECRET,day):random[0];
+      const seed=mode==='daily'?await dailySeed(env.SESSION_SECRET,`${gameType}:${day}`):random[0];
       try {
-        await env.DB.prepare('INSERT INTO games(id,player_id,seed,started_at,mode,challenge_day) VALUES (?,?,?,?,?,?)').bind(id,uid,seed,stamp,mode,mode==='daily'?day:null).run();
+        await env.DB.prepare('INSERT INTO games(id,player_id,seed,started_at,mode,game_type,challenge_day) VALUES (?,?,?,?,?,?,?)').bind(id,uid,seed,stamp,mode,gameType,mode==='daily'?day:null).run();
       } catch(err) {
-        // A simultaneous daily start cannot issue two valid entries.
         if (mode==='daily') {
-          const existing=await env.DB.prepare('SELECT id,seed,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE player_id=? AND mode=? AND challenge_day=?').bind(uid,'daily',day).first();
-          if (existing && !existing.finishedAt) return json({ id:existing.id,seed:existing.seed,startedAt:existing.startedAt,mode,challengeDay:day,reused:true });
+          const existing=await env.DB.prepare('SELECT id,seed,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE player_id=? AND game_type=? AND mode=? AND challenge_day=?').bind(uid,gameType,'daily',day).first();
+          if (existing && !existing.finishedAt) return json({ id:existing.id,seed:existing.seed,startedAt:existing.startedAt,mode,game:gameType,challengeDay:day,reused:true });
           if (existing) return fail(409,'Daily challenge already completed; return tomorrow (UTC).');
         }
         throw err;
       }
-      return json({ id,seed,startedAt:stamp,mode,challengeDay:mode==='daily'?day:null },201);
+      return json({ id,seed,startedAt:stamp,mode,game:gameType,challengeDay:mode==='daily'?day:null },201);
     }
     if (method==='POST' && path==='/api/game/finish') {
       const input = await bodyJSON(request);
       if (typeof input.id!=='string'|| !/^[0-9a-f-]{36}$/.test(input.id)) return fail(400,'Invalid game ID');
-      if (!Array.isArray(input.moves) || input.moves.length>1500 || input.moves.some(x=>!['left','right','up','down'].includes(x))) return fail(400,'Invalid moves');
-      const game=await env.DB.prepare('SELECT id,seed,mode,challenge_day AS challengeDay,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE id=? AND player_id=?').bind(input.id,uid).first();
+      if (!Array.isArray(input.moves) || input.moves.length>2500) return fail(400,'Invalid moves');
+      const game=await env.DB.prepare('SELECT id,seed,mode,COALESCE(game_type,"merge") AS gameType,challenge_day AS challengeDay,started_at AS startedAt,finished_at AS finishedAt FROM games WHERE id=? AND player_id=?').bind(input.id,uid).first();
       if (!game) return fail(404,'Game not found');
       if (game.finishedAt) return fail(409,'Game already saved');
       if (now()-game.startedAt>DAY*7) return fail(410,'Game expired');
       if (game.mode==='daily' && game.challengeDay!==todayUTC()) return fail(410,'Daily challenge expired at 00:00 UTC');
-      if (input.moves.length<2) return fail(400,'Play at least two moves');
-      let verified;
-      try { verified=replay(game.seed,input.moves); } catch { return fail(400,'Invalid game move sequence'); }
-      if (now()-game.startedAt<Math.max(3,Math.floor(input.moves.length/25))) return fail(400,'Game completed too quickly');
-      const daily = await env.DB.prepare('SELECT COALESCE(SUM(coins_awarded),0) AS total FROM games WHERE player_id=? AND finished_at>=?').bind(uid,Math.floor(now()/DAY)*DAY).first();
-      const coins = Math.min(coinsForScore(verified.score), Math.max(0,60-(daily?.total||0)));
-      const bestTile=Math.max(...verified.board);
+
+      let verifiedScore = 0;
+      let coins = 0;
+      let bestTile = 0;
+
+      if (game.gameType === 'blocks') {
+        if (input.moves.length < 1) return fail(400, 'Play at least one move');
+        for (const m of input.moves) {
+          if (!m || typeof m.rackIndex !== 'number' || typeof m.row !== 'number' || typeof m.col !== 'number') {
+            return fail(400, 'Invalid block move');
+          }
+        }
+        let verified;
+        try { verified = replayBlocks(game.seed, input.moves); } catch { return fail(400, 'Invalid block move sequence'); }
+        verifiedScore = verified.score;
+        const daily = await env.DB.prepare('SELECT COALESCE(SUM(coins_awarded),0) AS total FROM games WHERE player_id=? AND finished_at>=?').bind(uid,Math.floor(now()/DAY)*DAY).first();
+        coins = Math.min(coinsForBlocksScore(verifiedScore), Math.max(0, 60 - (daily?.total || 0)));
+      } else {
+        if (input.moves.length < 2 || input.moves.some(x=>!['left','right','up','down'].includes(x))) return fail(400,'Invalid moves');
+        let verified;
+        try { verified=replay(game.seed,input.moves); } catch { return fail(400,'Invalid game move sequence'); }
+        if (now()-game.startedAt<Math.max(3,Math.floor(input.moves.length/25))) return fail(400,'Game completed too quickly');
+        verifiedScore = verified.score;
+        bestTile = Math.max(...verified.board);
+        const daily = await env.DB.prepare('SELECT COALESCE(SUM(coins_awarded),0) AS total FROM games WHERE player_id=? AND finished_at>=?').bind(uid,Math.floor(now()/DAY)*DAY).first();
+        coins = Math.min(coinsForScore(verifiedScore), Math.max(0,60-(daily?.total||0)));
+      }
+
       const completed=await env.DB.prepare(`UPDATE games SET finished_at=?,score=?,moves_count=?,coins_awarded=?,best_tile=?
         WHERE id=? AND player_id=? AND finished_at IS NULL RETURNING id`)
-        .bind(now(),verified.score,input.moves.length,coins,bestTile,input.id,uid).first();
+        .bind(now(),verifiedScore,input.moves.length,coins,bestTile,input.id,uid).first();
       if (!completed) return fail(409,'Game already saved');
-      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed FROM players WHERE id=?').bind(uid).first();
-      return json({ saved:true, score:verified.score, coinsAwarded:coins, mode:game.mode, ...profile });
+      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed,COALESCE(best_blocks_score,0) AS bestBlocksScore FROM players WHERE id=?').bind(uid).first();
+      return json({ saved:true, score:verifiedScore, coinsAwarded:coins, mode:game.mode, game:game.gameType, ...profile });
     }
     if (method==='POST' && path==='/api/shop/buy') {
       const input=await bodyJSON(request);
