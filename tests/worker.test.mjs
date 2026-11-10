@@ -53,4 +53,24 @@ test('leaderboard returns blocks leaders with mocked D1', async () => {
   assert.deepEqual(data.leaders, [{ name: 'Alice', score: 450 }]);
 });
 
+test('leaderboard returns cascade leaders with mocked D1', async () => {
+  const mockDB = {
+    prepare(query) {
+      assert(query.includes('best_cascade_score') || query.includes('cascade'));
+      return {
+        async all() {
+          return { results: [{ name: 'Bob', score: 1200 }] };
+        }
+      };
+    }
+  };
+  const response = await worker.fetch(new Request('https://example.com/api/leaderboard?game=cascade&mode=classic'), { DB: mockDB });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.game, 'cascade');
+  assert.equal(data.mode, 'classic');
+  assert.deepEqual(data.leaders, [{ name: 'Bob', score: 1200 }]);
+});
+
+
 

@@ -1,5 +1,6 @@
 import { newGame, move, replay, coinsForScore } from './engine.mjs';
 import { newBlocksGame, canPlace, placeBlock, replayBlocks, coinsForBlocksScore, GRID_SIZE } from './blocks-engine.mjs';
+import { newColorGame, swapGems, replayColors, coinsForColorsScore, GEMS, BOARD_SIZE, MAX_MOVES } from './color-engine.mjs';
 import { THEMES, earnedBadges } from './catalog.mjs';
 
 const $ = id => document.getElementById(id);
@@ -9,11 +10,11 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
+const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
 
 let player = emptyPlayer(), online = false, view = 'home';
-let activeGame = 'merge'; // 'merge' | 'blocks'
-let rankGame = 'merge';   // 'merge' | 'blocks'
+let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade'
+let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade'
 let rankMode = 'classic'; // 'classic' | 'daily'
 let currentMode = 'classic'; // for Merge Streak
 let lastFinishedGameType = 'merge';
@@ -25,6 +26,9 @@ const leaderCache = {};
 
 // Block Collapse state
 let blocksState = null, blocksMoves = [], currentBlocksRun = null, blocksCompleted = false, blocksBusy = false, selectedRackIndex = -1;
+
+// Color Cascade state
+let cascadeState = null, cascadeMoves = [], currentCascadeRun = null, cascadeCompleted = false, cascadeBusy = false, selectedGemCoord = null;
 
 let authToken = null;
 try { authToken = sessionStorage.getItem('ms_auth_token'); } catch {}
@@ -60,6 +64,9 @@ function saveDraft() { if (!currentRun || completed) return; write(draftKey(curr
 
 function draftKeyBlocks(run) { return online ? `ms_blocks_run_${player.id}_${run.id}` : 'ms_demo_blocks_run'; }
 function saveBlocksDraft() { if (!currentBlocksRun || blocksCompleted) return; write(draftKeyBlocks(currentBlocksRun), { seed: currentBlocksRun.seed, moves: blocksMoves, mode: currentBlocksRun.mode, id: currentBlocksRun.id }); }
+
+function draftKeyCascade(run) { return online ? `ms_cascade_run_${player.id}_${run.id}` : 'ms_demo_cascade_run'; }
+function saveCascadeDraft() { if (!currentCascadeRun || cascadeCompleted) return; write(draftKeyCascade(currentCascadeRun), { seed: currentCascadeRun.seed, moves: cascadeMoves, mode: currentCascadeRun.mode, id: currentCascadeRun.id }); }
 
 function storeGuest() {
   if (online) return;
@@ -120,15 +127,16 @@ function renderProfileBase() {
 
   $('home-best').textContent = num(Math.max(player.bestScore, state?.score || 0));
   $('home-blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
-  $('home-games').textContent = num(player.gamesPlayed);
+  $('home-cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
   $('home-streak').textContent = num(player.streak);
 
   $('best-score').textContent = num(Math.max(player.bestScore, state?.score || 0));
   $('blocks-best').textContent = num(Math.max(player.bestBlocksScore || 0, blocksState?.score || 0));
+  $('cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState?.score || 0));
 
   $('profile-best').textContent = num(player.bestScore);
   $('profile-blocks-best').textContent = num(player.bestBlocksScore || 0);
-  $('profile-games').textContent = num(player.gamesPlayed);
+  $('profile-cascade-best').textContent = num(player.bestCascadeScore || 0);
   $('profile-streak').textContent = num(player.streak);
 
   updateRank();
@@ -140,11 +148,12 @@ function renderRecent(containerId) {
   if (!recentGames.length) { target.appendChild(el('div', 'empty-state', 'No saved games yet. Play and finish your first run!')); return; }
   for (const game of recentGames.slice(0, 5)) {
     const isBlocks = game.gameType === 'blocks';
+    const isCascade = game.gameType === 'cascade';
     const isDaily = game.mode === 'daily';
     const row = el('div', 'recent-item');
-    const icon = el('span', 'recent-icon', isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
+    const icon = el('span', 'recent-icon', isCascade ? '🔮' : isBlocks ? '🧱' : isDaily ? '⚡' : '🔢');
     const detail = el('div');
-    const label = el('strong', '', isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
+    const label = el('strong', '', isCascade ? 'Color Cascade' : isBlocks ? 'Block Collapse' : isDaily ? 'Daily challenge' : 'Merge Streak');
     const dt = new Date(game.finishedAt * 1000).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
     detail.append(label, el('small', '', `${dt} · Completed`));
     row.append(icon, detail, el('b', '', num(game.score)));
@@ -617,23 +626,256 @@ async function completeBlocksGame() {
 }
 
 // ==========================================
+// GAME 3: COLOR CASCADE (7x7 MATCH-3)
+// ==========================================
+
+function renderCascadeUI() {
+  if (!cascadeState) return;
+  $('cascade-score').textContent = num(cascadeState.score);
+  $('cascade-best').textContent = num(Math.max(player.bestCascadeScore || 0, cascadeState.score));
+  $('cascade-moves-left').textContent = String(Math.max(0, MAX_MOVES - cascadeState.moves));
+  $('cascade-streak-tag').textContent = `COMBO ${cascadeState.streak}×`;
+  $('cascade-clears-counter').textContent = `${num(cascadeState.totalClears)} CLEARS`;
+  $('cascade-bank-btn').disabled = cascadeBusy || cascadeCompleted || cascadeMoves.length < 1;
+  $('cascade-new-game-btn').disabled = cascadeBusy;
+  $('cascade-state-chip').textContent = cascadeCompleted ? 'SCORE SAVED' : cascadeState.over ? 'NO MOVES LEFT' : cascadeState.streak > 1 ? `COMBO ×${cascadeState.streak}` : 'SWAP GEMS';
+
+  // Render 7x7 Board
+  const board = $('cascade-board');
+  const frag = document.createDocumentFragment();
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const idx = r * BOARD_SIZE + c;
+      const val = cascadeState.board[idx];
+      const gem = GEMS[val] || GEMS[0];
+      const isSelected = selectedGemCoord && selectedGemCoord.r === r && selectedGemCoord.c === c;
+      const cell = el('div', `gem-cell gem-${val}${isSelected ? ' selected' : ''}`);
+      cell.dataset.row = String(r);
+      cell.dataset.col = String(c);
+      cell.textContent = gem.symbol;
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('aria-label', `Row ${r + 1}, col ${c + 1}: ${gem.name}${isSelected ? ' (selected)' : ''}`);
+
+      cell.addEventListener('click', () => handleGemClick(r, c));
+      frag.appendChild(cell);
+    }
+  }
+  board.replaceChildren(frag);
+
+  renderProfileBase();
+}
+
+function handleGemClick(r, c) {
+  if (view !== 'play' || activeGame !== 'cascade' || !cascadeState || cascadeCompleted || cascadeBusy || cascadeState.over) return;
+
+  if (!selectedGemCoord) {
+    selectedGemCoord = { r, c };
+    try { tg?.HapticFeedback?.selectionChanged?.(); } catch {}
+    const gem = GEMS[cascadeState.board[r * BOARD_SIZE + c]];
+    $('cascade-status').textContent = `Selected ${gem.name} at row ${r + 1}, col ${c + 1}. Now tap an adjacent neighbor to swap!`;
+    renderCascadeUI();
+    return;
+  }
+
+  const { r: r1, c: c1 } = selectedGemCoord;
+
+  // Deselect if tapped same gem
+  if (r1 === r && c1 === c) {
+    selectedGemCoord = null;
+    $('cascade-status').textContent = 'Gem deselected. Tap any gem to start a swap.';
+    renderCascadeUI();
+    return;
+  }
+
+  // If not adjacent (Manhattan distance !== 1), switch selection
+  if (Math.abs(r1 - r) + Math.abs(c1 - c) !== 1) {
+    selectedGemCoord = { r, c };
+    try { tg?.HapticFeedback?.selectionChanged?.(); } catch {}
+    const gem = GEMS[cascadeState.board[r * BOARD_SIZE + c]];
+    $('cascade-status').textContent = `Selected ${gem.name}. Tap an adjacent gem to swap!`;
+    renderCascadeUI();
+    return;
+  }
+
+  // Attempt swap
+  const result = swapGems(cascadeState, r1, c1, r, c);
+  if (!result.valid) {
+    $('cascade-status').textContent = 'No match there! Swapped back. Choose another swap.';
+    try { tg?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+    selectedGemCoord = null;
+    renderCascadeUI();
+    return;
+  }
+
+  // Valid swap!
+  cascadeState = result.state;
+  cascadeMoves.push({ r1, c1, r2: r, c2: c });
+  saveCascadeDraft();
+  selectedGemCoord = null;
+
+  try { tg?.HapticFeedback?.impactOccurred?.('medium'); } catch {}
+
+  if (result.cascades > 1) {
+    try { tg?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+    $('cascade-status').textContent = `Mega Cascade! ${result.cascades}× combo! +${result.pointsGained} pts`;
+  } else {
+    $('cascade-status').textContent = `Match cleared! +${result.pointsGained} pts. Keep going!`;
+  }
+
+  renderCascadeUI();
+
+  if (cascadeState.over) {
+    $('cascade-status').textContent = 'All 30 moves used! Saving your score...';
+    completeCascadeGame();
+  }
+}
+
+function hydrateCascadeRun(run, history) {
+  currentCascadeRun = { ...run, game: 'cascade', mode: 'classic' };
+  cascadeMoves = Array.isArray(history) ? history : [];
+  try {
+    cascadeState = replayColors(run.seed, cascadeMoves);
+  } catch {
+    cascadeMoves = [];
+    cascadeState = newColorGame(run.seed);
+  }
+  cascadeCompleted = false;
+  selectedGemCoord = null;
+  saveCascadeDraft();
+  renderCascadeUI();
+  $('cascade-status').textContent = 'Tap any gem to select, then tap an adjacent neighbor to swap!';
+}
+
+async function launchCascade(newRun = false) {
+  if (cascadeBusy) return;
+  if (!newRun && currentCascadeRun && !cascadeCompleted) {
+    switchGame('cascade');
+    setView('play');
+    return;
+  }
+  if (!newRun && !online) {
+    const draft = read('ms_demo_cascade_run');
+    if (draft && Number.isInteger(draft.seed)) {
+      hydrateCascadeRun(draft, draft.moves);
+      switchGame('cascade');
+      setView('play');
+      return;
+    }
+  }
+  if (!newRun && online) {
+    const active = activeRuns.find(r => r.gameType === 'cascade');
+    if (active) {
+      const saved = read(`ms_cascade_run_${player.id}_${active.id}`, {});
+      hydrateCascadeRun(active, saved.moves || []);
+      switchGame('cascade');
+      setView('play');
+      return;
+    }
+  }
+
+  if (newRun && currentCascadeRun && !cascadeCompleted && cascadeMoves.length > 0 && !confirm('Start a new game of Color Cascade? Your unfinished run will be abandoned.')) return;
+
+  cascadeBusy = true;
+  try {
+    let run;
+    if (online) {
+      run = await api('/game/start', { method: 'POST', body: { game: 'cascade', mode: 'classic' } });
+      activeRuns = activeRuns.filter(r => r.id !== run.id);
+      activeRuns.unshift(run);
+    } else {
+      run = { id: `guest-cascade-${stamp()}`, mode: 'classic', game: 'cascade', seed: localSeed(), startedAt: stamp() };
+    }
+    const saved = read(draftKeyCascade(run), {});
+    hydrateCascadeRun(run, run.reused ? saved.moves || [] : []);
+    switchGame('cascade');
+    setView('play');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    cascadeBusy = false;
+    renderCascadeUI();
+  }
+}
+
+async function completeCascadeGame() {
+  if (!cascadeState || cascadeCompleted || cascadeBusy || cascadeMoves.length < 1) return;
+  cascadeBusy = true;
+  $('cascade-bank-btn').disabled = true;
+  $('cascade-status').textContent = 'Verifying and saving your cascade score...';
+  lastFinishedGameType = 'cascade';
+
+  try {
+    let earned, score = cascadeState.score;
+    if (online) {
+      const result = await api('/game/finish', { method: 'POST', body: { id: currentCascadeRun.id, moves: cascadeMoves } });
+      earned = result.coinsAwarded;
+      score = result.score;
+      player.coins = result.coins;
+      player.bestCascadeScore = result.bestCascadeScore;
+      player.gamesPlayed = result.gamesPlayed;
+      activeRuns = activeRuns.filter(run => run.id !== currentCascadeRun.id);
+    } else {
+      const todayEarned = recentGames.filter(g => new Date(g.finishedAt * 1000).toISOString().slice(0, 10) === dateUTC()).reduce((sum, g) => sum + (g.coinsAwarded || 0), 0);
+      earned = Math.min(coinsForColorsScore(score), Math.max(0, 60 - todayEarned));
+      player.coins += earned;
+      player.bestCascadeScore = Math.max(player.bestCascadeScore || 0, score);
+      player.gamesPlayed++;
+    }
+
+    erase(draftKeyCascade(currentCascadeRun));
+    recentGames.unshift({ score, mode: 'classic', gameType: 'cascade', finishedAt: stamp(), coinsAwarded: earned });
+    recentGames = recentGames.slice(0, 45);
+    player.streak = localStreak();
+    storeGuest();
+    cascadeCompleted = true;
+
+    $('finish-title').textContent = cascadeState.over ? 'Run finished!' : 'Score saved!';
+    $('final-score').textContent = num(score);
+    $('final-coins').textContent = `+${num(earned)}`;
+    $('finish-caption').textContent = online ? 'Your verified score counts toward the Color Cascade rankings.' : 'Practice scores and coins stay on this device.';
+    $('play-again-btn').textContent = 'Play again ↻';
+    $('cascade-status').textContent = 'Run saved. Keep playing to climb higher!';
+
+    renderCascadeUI();
+    renderDashboard();
+    renderShop();
+    $('finish-dialog').showModal();
+    if (online) refreshLeaderboard();
+  } catch (err) {
+    $('cascade-status').textContent = 'Saving failed. Your game remains stored locally.';
+    toast(err.message);
+  } finally {
+    cascadeBusy = false;
+    renderCascadeUI();
+  }
+}
+
+// ==========================================
 // GAME SWITCHING & LEADERBOARDS
 // ==========================================
 
 function switchGame(gameType) {
-  activeGame = gameType === 'blocks' ? 'blocks' : 'merge';
+  activeGame = gameType === 'blocks' ? 'blocks' : gameType === 'cascade' ? 'cascade' : 'merge';
   document.querySelectorAll('[data-switch-game]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.switchGame === activeGame);
   });
   $('merge-game-view').style.display = activeGame === 'merge' ? 'block' : 'none';
   $('blocks-game-view').style.display = activeGame === 'blocks' ? 'block' : 'none';
-  $('arena-main-title').innerHTML = activeGame === 'blocks' ? 'Block <span>Collapse.</span>' : 'Merge <span>Streak.</span>';
-  $('arena-main-desc').textContent = activeGame === 'blocks' ? '8×8 line clearer. Place polyominoes, clear lines, stack combos.' : '4×4 number merge. Combine matching tiles to reach 2048 and beyond.';
+  $('cascade-game-view').style.display = activeGame === 'cascade' ? 'block' : 'none';
 
   if (activeGame === 'blocks') {
+    $('arena-main-title').innerHTML = 'Block <span>Collapse.</span>';
+    $('arena-main-desc').textContent = '8×8 line clearer. Place polyominoes, clear lines, stack combos.';
     if (!blocksState) launchBlocks(false);
     else renderBlocksUI();
+  } else if (activeGame === 'cascade') {
+    $('arena-main-title').innerHTML = 'Color <span>Cascade.</span>';
+    $('arena-main-desc').textContent = '7×7 gem swap. Line up 3 or more gems and chain cascading collapses.';
+    if (!cascadeState) launchCascade(false);
+    else renderCascadeUI();
   } else {
+    $('arena-main-title').innerHTML = 'Merge <span>Streak.</span>';
+    $('arena-main-desc').textContent = '4×4 number merge. Combine matching tiles to reach 2048 and beyond.';
     if (!state) launch('classic', false);
     else renderBoard();
   }
@@ -651,7 +893,8 @@ function paintLeaders(list) {
 
 async function refreshLeaderboard() {
   $('rank-date-note').textContent = rankMode === 'daily' ? `UTC challenge · ${dateUTC()}` : 'Verified completed games only';
-  $('ranking-game-title').textContent = `${rankGame === 'blocks' ? 'Block Collapse' : 'Merge Streak'} Top 20`;
+  const gameName = rankGame === 'blocks' ? 'Block Collapse' : rankGame === 'cascade' ? 'Color Cascade' : 'Merge Streak';
+  $('ranking-game-title').textContent = `${gameName} Top 20`;
   const cacheKey = `${rankGame}_${rankMode}`;
   try {
     const result = await api(`/leaderboard?game=${rankGame}&mode=${rankMode}`);
@@ -722,11 +965,24 @@ async function boot() {
     hydrateBlocksRun(run, []);
   }
 
+  // Hydrate Color Cascade run
+  const activeCascade = online ? activeRuns.find(run => run.gameType === 'cascade') : read('ms_demo_cascade_run');
+  if (activeCascade) {
+    const cache = online ? read(`ms_cascade_run_${player.id}_${activeCascade.id}`, {}) : activeCascade;
+    hydrateCascadeRun(activeCascade, cache.moves || []);
+  } else if (!online) {
+    const run = { id: `guest-cascade-${stamp()}`, mode: 'classic', game: 'cascade', seed: localSeed(), startedAt: stamp() };
+    hydrateCascadeRun(run, []);
+  }
+
   renderDashboard();
   renderShop();
   refreshLeaderboard();
 
-  if (urlParamGame === 'blocks') {
+  if (urlParamGame === 'cascade') {
+    switchGame('cascade');
+    setView('play');
+  } else if (urlParamGame === 'blocks') {
     switchGame('blocks');
     setView('play');
   } else if (urlParamGame === 'merge') {
@@ -748,7 +1004,9 @@ for (const button of document.querySelectorAll('[data-launch-game]')) {
   button.addEventListener('click', () => {
     const g = button.dataset.launchGame;
     const m = button.dataset.launchMode || 'classic';
-    if (g === 'blocks') {
+    if (g === 'cascade') {
+      launchCascade(false);
+    } else if (g === 'blocks') {
       launchBlocks(false);
     } else {
       launch(m, false);
@@ -791,12 +1049,18 @@ $('bank-btn').addEventListener('click', () => {
 $('blocks-new-game-btn').addEventListener('click', () => launchBlocks(true));
 $('blocks-bank-btn').addEventListener('click', () => completeBlocksGame());
 
+$('cascade-new-game-btn').addEventListener('click', () => launchCascade(true));
+$('cascade-bank-btn').addEventListener('click', () => completeCascadeGame());
+
 $('help-btn').addEventListener('click', () => $('info-dialog').showModal());
 $('refresh-leaders').addEventListener('click', refreshLeaderboard);
 $('dismiss-finish-btn').addEventListener('click', () => { $('finish-dialog').close(); setView('home'); });
 $('play-again-btn').addEventListener('click', () => {
   $('finish-dialog').close();
-  if (lastFinishedGameType === 'blocks') {
+  if (lastFinishedGameType === 'cascade') {
+    switchGame('cascade');
+    launchCascade(true);
+  } else if (lastFinishedGameType === 'blocks') {
     switchGame('blocks');
     launchBlocks(true);
   } else {
