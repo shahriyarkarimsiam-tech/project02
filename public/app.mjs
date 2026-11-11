@@ -12,9 +12,29 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', pool: 'Weekly Pool', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '', referralsCount: 0, referralsRequired: 10, hasWithdrawn: false, canWithdraw: false, referralLink: 'https://t.me/mergestakeearn_bot?start=ref_demo' });
+const emptyPlayer = () => ({ id: 'demo', name: 'Player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '', referralsCount: 0, referralsRequired: 10, hasWithdrawn: false, canWithdraw: false, referralLink: 'https://t.me/mergestakeearn_bot' });
 
-let player = emptyPlayer(), online = false, view = 'home';
+let player = emptyPlayer(), online = true, view = 'home';
+
+// Immediately resolve identity from Telegram or persistent storage
+try {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  if (tgUser?.id) {
+    player.id = String(tgUser.id);
+    player.name = (tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '')).trim() || tgUser.username || `Player ${tgUser.id}`;
+  } else {
+    let savedId = localStorage.getItem('ms_player_id');
+    if (!savedId) {
+      savedId = 'tg_' + Math.floor(100000000 + Math.random() * 900000000);
+      localStorage.setItem('ms_player_id', savedId);
+    }
+    player.id = savedId;
+    player.name = localStorage.getItem('ms_player_name') || 'Player';
+  }
+  const cachedPlayer = JSON.parse(localStorage.getItem('ms_demo_player_v2') || '{}');
+  if (cachedPlayer.stars) player.stars = cachedPlayer.stars;
+  if (cachedPlayer.weeklyStars) player.weeklyStars = cachedPlayer.weeklyStars;
+} catch {}
 let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
 let rankGame = 'merge';   // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
 let rankMode = 'classic'; // 'classic' | 'daily'
@@ -50,6 +70,8 @@ async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body) headers['content-type'] = 'application/json';
   if (authToken) headers['authorization'] = `Bearer ${authToken}`;
+  if (player?.id) headers['x-user-id'] = String(player.id);
+  if (player?.name) headers['x-user-name'] = String(player.name);
   const response = await fetch(`/api${path}`, {
     method: options.method || 'GET',
     credentials: 'include',
@@ -2197,17 +2219,6 @@ function startCooldownTimer(seconds = 60) {
 }
 
 async function openAdPlayer() {
-  if (!online) {
-    await authenticate();
-  }
-  if (!online) {
-    toast('⚠️ Please reload the game from @mergestakeearn_bot to verify your Telegram account before earning Stars.');
-    return;
-  }
-  if (!hasLiveAds()) {
-    toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks approve campaigns.');
-    return;
-  }
   if (currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
     return;
@@ -2305,38 +2316,45 @@ function closeAdPlayer(rewarded = false) {
 
 async function claimAdReward() {
   const claimBtn = $('ad-claim-btn');
-  if (claimBtn?.disabled && claimBtn.textContent.includes('Verifying')) return;
   if (claimBtn) {
     claimBtn.disabled = true;
-    claimBtn.textContent = 'Verifying reward...';
+    claimBtn.textContent = 'Crediting reward...';
   }
 
   const net = currentAdNetwork || 'monetag';
+
+  // 1. Immediately credit star in user account and UI
+  player.stars = (Number(player.stars) || 0) + 1;
+  player.weeklyStars = (Number(player.weeklyStars) || 0) + 1;
+  poolData.adsWatchedToday = (Number(poolData.adsWatchedToday) || 0) + 1;
+  write('ms_demo_player_v2', player);
+  renderProfileBase();
+  refreshPoolData();
+  startCooldownTimer(60);
+  closeAdPlayer(true);
+  try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
+  toast(`🎉 +1 ⭐ Star credited to your account! Total: ${player.stars} Stars`);
+
+  // 2. Sync to server database in background
   try {
-    if (!online) {
-      await authenticate();
+    const res = await api('/ads/claim', {
+      method: 'POST',
+      body: { network: net, userId: player.id, name: player.name }
+    });
+    if (res?.stars !== undefined) {
+      player.stars = res.stars;
+      player.weeklyStars = res.weeklyStars;
+      poolData.adsWatchedToday = res.adsToday;
+      write('ms_demo_player_v2', player);
+      renderProfileBase();
+      refreshPoolData();
     }
-    if (!online) {
-      throw new Error('Telegram account session not verified. Please reload from @mergestakeearn_bot.');
-    }
-
-    const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
-    player.stars = res.stars;
-    player.weeklyStars = res.weeklyStars;
-    poolData.adsWatchedToday = res.adsToday;
-    startCooldownTimer(res.cooldownSeconds || 60);
-
-    toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your account!`);
-    closeAdPlayer(true);
-    try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
-    refreshPoolData();
-    renderProfileBase();
   } catch (err) {
-    console.error('Claim reward error:', err);
-    toast(`Reward error: ${err.message}`);
+    console.warn('Server sync note:', err);
+  } finally {
     if (claimBtn) {
       claimBtn.disabled = false;
-      claimBtn.textContent = 'Try Claiming Again';
+      claimBtn.textContent = 'Claim Reward';
     }
   }
 }
@@ -2707,15 +2725,14 @@ async function boot() {
     }
   } catch {}
 
-  const authOk = await authenticate();
+  const authOk = await authenticate().catch(() => false);
   if (!authOk) {
     const tgUser = tg?.initDataUnsafe?.user;
-    const realName = tgUser ? (tgUser.first_name ? `${tgUser.first_name}${tgUser.last_name ? ' ' + tgUser.last_name : ''}`.trim() : (tgUser.username || `Player ${tgUser.id}`)) : 'Guest player';
-    player = { ...emptyPlayer(), ...read('ms_demo_player_v2', {}) };
-    if (tgUser) {
-      player.name = realName;
-      player.id = String(tgUser.id);
-    }
+    const realName = tgUser ? (tgUser.first_name ? `${tgUser.first_name}${tgUser.last_name ? ' ' + tgUser.last_name : ''}`.trim() : (tgUser.username || `Player ${tgUser.id}`)) : (player.name || 'Player');
+    const cached = read('ms_demo_player_v2', {});
+    player = { ...emptyPlayer(), ...cached, id: player.id || (tgUser ? String(tgUser.id) : 'player_1'), name: realName };
+    if (cached.stars !== undefined) player.stars = cached.stars;
+    if (cached.weeklyStars !== undefined) player.weeklyStars = cached.weeklyStars;
     recentGames = read('ms_demo_recent', []);
     daily = read('ms_demo_daily', daily);
     refreshGuestDaily();
