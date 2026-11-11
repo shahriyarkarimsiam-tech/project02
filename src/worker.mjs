@@ -721,24 +721,42 @@ async function handleTelegramWebhook(request, env) {
   return json({ ok: true });
 }
 
+const SUPPORTED_AD_NETWORKS = [
+  'direct',
+  'monetag',
+  'adsgram',
+  'onclicka',
+  'richads',
+  'telega',
+  'tads',
+  'adexium',
+  'gigapub',
+  'adsun',
+  'litebits',
+  'adskinz',
+  'openad',
+  'adsterra'
+];
+
 async function handleAdPostback(request, env) {
   if (!env.DB) return fail(503, 'Database unavailable');
   const url = new URL(request.url);
-  let uid, network, secret;
+  let uid, rawNet, secret;
   if (request.method === 'POST') {
     const input = await bodyJSON(request).catch(() => ({}));
-    uid = input.user_id || input.subid || input.uid;
-    network = input.network || 'adsgram';
+    uid = input.user_id || input.subid || input.uid || input.click_id;
+    rawNet = input.network || 'monetag';
     secret = input.secret;
   } else {
-    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid');
-    network = url.searchParams.get('network') || 'monetag';
+    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id');
+    rawNet = url.searchParams.get('network') || 'monetag';
     secret = url.searchParams.get('secret');
   }
   if (!uid) return fail(400, 'Missing user_id parameter');
   if (env.POSTBACK_SECRET && secret !== env.POSTBACK_SECRET) {
     return fail(403, 'Invalid postback secret');
   }
+  const network = SUPPORTED_AD_NETWORKS.includes(String(rawNet).toLowerCase()) ? String(rawNet).toLowerCase() : 'direct';
   const player = await env.DB.prepare('SELECT id, stars, weekly_stars, last_ad_at FROM players WHERE id=?').bind(uid).first();
   if (!player) return fail(404, 'Player not found');
 
@@ -766,7 +784,7 @@ async function handleAdPostback(request, env) {
     `).bind(weekId, adRevenue, communityShare, communityShare)
   ]);
 
-  return json({ ok: true, user_id: uid, starsAwarded: 1 });
+  return json({ ok: true, user_id: uid, network, starsAwarded: 1 });
 }
 
 async function route(request, env) {
@@ -908,7 +926,8 @@ async function route(request, env) {
       }
 
       const input = await bodyJSON(request).catch(() => ({}));
-      const adNetwork = ['direct', 'adsgram', 'monetag'].includes(input.network) ? input.network : 'direct';
+      const rawNet = String(input.network || 'direct').toLowerCase();
+      const adNetwork = SUPPORTED_AD_NETWORKS.includes(rawNet) ? rawNet : 'direct';
       const weekId = currentWeekId();
       const impressionId = crypto.randomUUID();
       const adRevenue = 0.02;
@@ -935,12 +954,38 @@ async function route(request, env) {
       const updated = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance FROM players WHERE id=?').bind(uid).first();
       return json({
         ok: true,
+        network: adNetwork,
         rewardStars: 1,
         stars: updated.stars,
         weeklyStars: updated.weekly_stars,
         adsToday: adsToday + 1,
         dailyCap: DAILY_AD_CAP,
         cooldownSeconds: 60
+      });
+    }
+
+    if (method === 'GET' && path === '/api/admin/ads-summary') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const weekId = currentWeekId();
+      const [byNetwork, totalWeek, totalAll] = await Promise.all([
+        env.DB.prepare('SELECT ad_network AS network, COUNT(*) AS impressions, SUM(reward_stars) AS starsAwarded FROM ad_impressions GROUP BY ad_network ORDER BY impressions DESC').all().catch(() => ({ results: [] })),
+        env.DB.prepare('SELECT COUNT(*) AS impressions, SUM(reward_stars) AS starsAwarded FROM ad_impressions WHERE week_id=?').bind(weekId).first().catch(() => null),
+        env.DB.prepare('SELECT COUNT(*) AS impressions, SUM(reward_stars) AS starsAwarded FROM ad_impressions').first().catch(() => null)
+      ]);
+
+      return json({
+        ok: true,
+        weekId,
+        supportedNetworks: SUPPORTED_AD_NETWORKS,
+        totalWeekImpressions: totalWeek?.impressions || 0,
+        totalWeekStars: totalWeek?.starsAwarded || 0,
+        totalAllTimeImpressions: totalAll?.impressions || 0,
+        totalAllTimeStars: totalAll?.starsAwarded || 0,
+        networkBreakdown: byNetwork.results || []
       });
     }
 

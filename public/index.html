@@ -9,6 +9,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
+  <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
   <script defer type="module" src="/app.mjs"></script>
 </head>
 <body data-theme="mint">
@@ -150,6 +151,23 @@
         <!-- VIEW: PLAY GAMES ARENA -->
         <section class="view" data-view="play" aria-label="Arcade Games Arena">
           <div class="page-heading"><div><span class="mini-label">THE ARCADE ARENA</span><h1 id="arena-main-title">Arcade <span>Arena.</span></h1><p id="arena-main-desc">Pick your game, place your moves and beat your personal record.</p></div><button class="btn btn-outline" id="help-btn">? How to play</button></div>
+
+          <!-- ARENA SPONSOR AD BANNER -->
+          <div class="arena-sponsor-banner" id="arena-sponsor-banner">
+            <div class="arena-sponsor-content">
+              <div class="arena-sponsor-icon">⭐</div>
+              <div class="arena-sponsor-text">
+                <div class="arena-sponsor-top">
+                  <span class="arena-sponsor-badge">50% WEEKLY USDT POOL</span>
+                  <span class="soft-chip live" id="arena-ad-status-chip">READY</span>
+                </div>
+                <strong>Watch Sponsor Ad & Earn 1 ⭐ Star</strong>
+                <p id="arena-cooldown-text">1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown.</p>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" id="arena-watch-ad-btn">▶ Watch Sponsor Ad (+1 ⭐)</button>
+          </div>
+
           <div class="game-switcher" role="tablist" aria-label="Game Switcher">
             <button class="game-switch-tab active" data-switch-game="merge" id="switch-merge-btn"><span class="tab-badge">4×4</span> 🔢 Merge Streak</button>
             <button class="game-switch-tab" data-switch-game="blocks" id="switch-blocks-btn"><span class="tab-badge">8×8</span> 🧱 Block Collapse</button>

@@ -713,3 +713,89 @@ test('POST /api/admin/withdrawal/reject refunds user balance', async () => {
   assert.equal(data.rejectionReason, 'Invalid address');
   assert(batchRan);
 });
+
+test('POST /api/ads/claim supports multi-network tracking', async () => {
+  const auth = await authHeader('1001');
+  let recordedNetwork = null;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM players WHERE id=?')) {
+                return { stars: 5, weekly_stars: 3, usdt_balance: 0.0, last_ad_at: 0 };
+              }
+              if (query.includes('SELECT COUNT(*) AS count FROM ad_impressions')) {
+                return { count: 2 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'monetag' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.network, 'monetag');
+  assert.equal(data.rewardStars, 1);
+});
+
+test('GET /api/admin/ads-summary returns network breakdown', async () => {
+  const auth = await authHeader('9999');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM ad_impressions WHERE week_id=?')) {
+                return { impressions: 15, starsAwarded: 15 };
+              }
+              return null;
+            }
+          };
+        },
+        async all() {
+          if (query.includes('GROUP BY ad_network')) {
+            return {
+              results: [
+                { network: 'monetag', impressions: 10, starsAwarded: 10 },
+                { network: 'adsgram', impressions: 5, starsAwarded: 5 }
+              ]
+            };
+          }
+          return { results: [] };
+        },
+        async first() {
+          return { impressions: 25, starsAwarded: 25 };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/ads-summary', {
+    headers: auth
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert(Array.isArray(data.supportedNetworks));
+  assert(data.supportedNetworks.includes('monetag'));
+  assert(data.supportedNetworks.includes('adsgram'));
+  assert(data.supportedNetworks.includes('adsterra'));
+  assert.equal(data.networkBreakdown.length, 2);
+});

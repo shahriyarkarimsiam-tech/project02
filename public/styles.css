@@ -299,7 +299,18 @@ body[data-theme='midnight']{--accent:#85caff;--accent-strong:#5bb2eb;--accent-rg
 .withdrawal-reason-text{margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.1);border-radius:6px;color:#fca5a5;font-size:12px}
 .withdrawal-pending-note{margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.08);border-radius:6px;color:#fcd34d;font-size:12px}
 
+/* Arena Sponsor Banner in Playgame View */
+.arena-sponsor-banner{background:linear-gradient(135deg,rgba(80,227,194,.08),rgba(17,27,43,.95));border:1px solid rgba(80,227,194,.28);border-radius:14px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 4px 20px rgba(0,0,0,.25)}
+.arena-sponsor-content{display:flex;align-items:center;gap:14px}
+.arena-sponsor-icon{width:42px;height:42px;min-width:42px;border-radius:12px;background:rgba(80,227,194,.15);color:var(--accent);display:grid;place-items:center;font-size:22px;border:1px solid rgba(80,227,194,.3)}
+.arena-sponsor-text{display:flex;flex-direction:column;gap:2px}
+.arena-sponsor-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.arena-sponsor-badge{font-size:9.5px;font-weight:800;letter-spacing:.8px;color:var(--accent);text-transform:uppercase}
+.arena-sponsor-text strong{font-size:14px;color:#f1f5f9;font-weight:700}
+.arena-sponsor-text p{margin:0;font-size:11px;color:#859bb3}
+
 @media(max-width:700px){
+  .arena-sponsor-banner{flex-direction:column;align-items:stretch;padding:12px 14px;gap:12px}
   .pool-profile-cashout-banner{flex-direction:column;align-items:stretch;text-align:left}
   .bottom-nav{grid-template-columns:repeat(7,1fr)}
 }

@@ -1608,11 +1608,34 @@ async function authenticate() {
 // ============================================================================
 
 const SPONSORS = [
-  { icon: '⚡', title: 'CryptoPulse Pro', desc: 'Real-time Telegram market signals, automated trading bot and multi-chain tracking in one app.' },
-  { icon: '💎', title: 'TonGems Hub', desc: 'Discover trending Jettons, NFT collections, and decentralized staking on The Open Network.' },
-  { icon: '🛡️', title: 'ShieldVPN Web3', desc: 'Ultra-fast, private, zero-log decentralized VPN for Telegram Mini Apps and browsing.' },
-  { icon: '🚀', title: 'StarLaunch Pad', desc: 'The leading community token launchpad with verified audits and instant Telegram alerts.' }
+  { network: 'adsgram', icon: '📢', title: 'AdsGram Network', tag: 'ADSGRAM REWARDED', desc: 'Leading Telegram Mini App video monetization network with verified Web3 advertisers.' },
+  { network: 'monetag', icon: '💰', title: 'Monetag Smart Direct', tag: 'MONETAG MONETIZATION', desc: 'AI-driven global ad formats delivering premium eCPM rates for mobile and Web3 applications.' },
+  { network: 'onclicka', icon: '⚡', title: 'OnClickA Traffic', tag: 'ONCLICKA PERFORMANCE', desc: 'High-conversion advertising platform powering fast-growing Telegram gaming bots and apps.' },
+  { network: 'richads', icon: '💎', title: 'RichAds Global', tag: 'RICHADS PREMIUM', desc: 'Scale user acquisition with top-tier verified push, pop and interstitial ad campaigns worldwide.' },
+  { network: 'telega', icon: '✈️', title: 'Telega.io Ads', tag: 'TELEGA.IO SPONSOR', desc: 'Premier marketplace for Telegram channels and bot advertisements with verified audience reach.' },
+  { network: 'tads', icon: '🎯', title: 'TADS Telegram Network', tag: 'TADS ENGINE', desc: 'Next-generation ad delivery system engineered specifically for Telegram Mini App games.' },
+  { network: 'adexium', icon: '🌐', title: 'Adexium Exchange', tag: 'ADEXIUM DECENTRALIZED', desc: 'Decentralized digital ad platform connecting web3 publishers with transparent brand sponsors.' },
+  { network: 'gigapub', icon: '🚀', title: 'GigaPub Media', tag: 'GIGAPUB PARTNER', desc: 'Performance monetization technology maximizing ad yields for high-engagement arcade games.' },
+  { network: 'adsun', icon: '☀️', title: 'Adsun Platform', tag: 'ADSUN ADVERTISING', desc: 'Targeted in-app sponsored campaigns with instant conversion tracking and user rewards.' },
+  { network: 'litebits', icon: '💠', title: 'LiteBits Ads', tag: 'LITEBITS NETWORK', desc: 'Fast, lightweight rewarded ad inventory optimized for instant-play casual mobile games.' },
+  { network: 'adskinz', icon: '🎮', title: 'AdsKinz Gaming', tag: 'ADSKINZ GAMIFIED', desc: 'Gamified immersive brand showcases turning video views into immediate community stars.' },
+  { network: 'openad', icon: '🔓', title: 'OpenAD Protocol', tag: 'OPENAD PROTOCOL', desc: 'Community-governed open advertising standard ensuring fair 50/50 revenue distribution.' },
+  { network: 'adsterra', icon: '⭐', title: 'Adsterra Network', tag: 'ADSTERRA VERIFIED', desc: 'World-renowned ad network delivering high-converting video and direct link sponsorships.' }
 ];
+
+let currentAdNetwork = 'adsgram';
+let adsgramController = null;
+
+function initAdsGramSDK() {
+  if (window.Adsgram && !adsgramController) {
+    try {
+      const blockId = window.ADSGRAM_BLOCK_ID || 'int-9191';
+      adsgramController = window.Adsgram.init({ blockId });
+    } catch (e) {
+      console.warn('AdsGram init notice:', e);
+    }
+  }
+}
 
 let poolData = {
   weekId: '2026-W46',
@@ -1737,10 +1760,15 @@ function updateCooldownDisplay() {
     $('pool-ad-status-chip').textContent = isCapped ? 'DAILY CAP' : (ready ? 'READY' : 'COOLDOWN');
     $('pool-ad-status-chip').className = `soft-chip ${ready ? 'live' : ''}`;
   }
+  if ($('arena-ad-status-chip')) {
+    $('arena-ad-status-chip').textContent = isCapped ? 'DAILY CAP' : (ready ? 'READY' : 'COOLDOWN');
+    $('arena-ad-status-chip').className = `soft-chip ${ready ? 'live' : ''}`;
+  }
 
   const cooldownText = isCapped ? '20/20 Daily Limit Reached' : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : 'Ready to watch');
   if ($('pool-cooldown-text')) $('pool-cooldown-text').textContent = cooldownText;
   if ($('sidebar-cooldown-text')) $('sidebar-cooldown-text').textContent = cooldownText;
+  if ($('arena-cooldown-text')) $('arena-cooldown-text').textContent = isCapped ? 'Daily cap reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Ad cooldown active: next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown.');
 
   const btnText = isCapped ? 'Daily Limit Reached (20/20)' : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)');
   if ($('pool-watch-ad-btn')) {
@@ -1750,6 +1778,10 @@ function updateCooldownDisplay() {
   if ($('sidebar-watch-ad-btn')) {
     $('sidebar-watch-ad-btn').disabled = !ready;
     $('sidebar-watch-ad-btn').textContent = isCapped ? 'Daily Cap (20/20)' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)');
+  }
+  if ($('arena-watch-ad-btn')) {
+    $('arena-watch-ad-btn').disabled = !ready;
+    $('arena-watch-ad-btn').textContent = btnText;
   }
 }
 
@@ -1768,10 +1800,6 @@ function startCooldownTimer(seconds = 60) {
 }
 
 function openAdPlayer() {
-  if (!online) {
-    toast('⭐ Real Star rewards are earned inside Telegram. Open the app in Telegram to watch ads!');
-    return;
-  }
   if (currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
     return;
@@ -1781,17 +1809,42 @@ function openAdPlayer() {
     return;
   }
 
+  // Check if live AdsGram SDK is present in Telegram
+  if (online && window.Adsgram && window.ADSGRAM_BLOCK_ID) {
+    initAdsGramSDK();
+    if (adsgramController) {
+      adsgramController.show().then(async (res) => {
+        if (res?.done) {
+          currentAdNetwork = 'adsgram';
+          await claimAdReward();
+        }
+      }).catch((err) => {
+        console.warn('AdsGram skipped or failed, fallback to showcase:', err);
+        showcaseAdPlayer();
+      });
+      return;
+    }
+  }
+
+  showcaseAdPlayer();
+}
+
+function showcaseAdPlayer() {
   const sponsor = SPONSORS[Math.floor(Math.random() * SPONSORS.length)];
+  currentAdNetwork = sponsor.network || 'adsgram';
+
   $('ad-showcase-icon').textContent = sponsor.icon;
   $('ad-showcase-title').textContent = sponsor.title;
   $('ad-showcase-desc').textContent = sponsor.desc;
+  const tagEl = document.querySelector('.ad-sponsor-badge');
+  if (tagEl) tagEl.innerHTML = `<span class="status-pulse"></span> ${sponsor.tag || 'SPONSOR SHOWCASE'}`;
 
   adWatchRemaining = 15;
   $('ad-timer-badge').textContent = '15s';
   $('ad-progress-bar').style.width = '0%';
   $('ad-claim-btn').disabled = true;
   $('ad-claim-btn').textContent = 'Watching Sponsor Ad (15s)...';
-  $('ad-player-status').textContent = 'Please watch the full 15 seconds to receive your 1 ⭐ Star.';
+  $('ad-player-status').textContent = `Please watch the full 15 seconds to receive your 1 ⭐ Star (${sponsor.title}).`;
   $('ad-cancel-btn').style.display = 'block';
 
   $('ad-player-dialog').showModal();
@@ -1815,7 +1868,7 @@ function openAdPlayer() {
       $('ad-timer-badge').textContent = 'DONE ✓';
       $('ad-claim-btn').disabled = false;
       $('ad-claim-btn').textContent = 'Claim 1 ⭐ Star Now!';
-      $('ad-player-status').textContent = '🎉 Sponsor showcase finished! Tap below to claim your Star.';
+      $('ad-player-status').textContent = `🎉 ${sponsor.title} finished! Tap below to claim your Star.`;
       $('ad-cancel-btn').style.display = 'none';
       try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
     }
@@ -1824,41 +1877,48 @@ function openAdPlayer() {
 
 function closeAdPlayer(rewarded = false) {
   clearInterval(adTimerInterval);
-  $('ad-player-dialog').close();
+  try { $('ad-player-dialog').close(); } catch {}
   if (!rewarded && adWatchRemaining > 0) {
     toast('Ad was closed early. 0 Stars awarded.');
   }
 }
 
 async function claimAdReward() {
-  if ($('ad-claim-btn').disabled) return;
-  $('ad-claim-btn').disabled = true;
-  $('ad-claim-btn').textContent = 'Verifying reward...';
+  const claimBtn = $('ad-claim-btn');
+  if (claimBtn?.disabled && claimBtn.textContent.includes('Verifying')) return;
+  if (claimBtn) {
+    claimBtn.disabled = true;
+    claimBtn.textContent = 'Verifying reward...';
+  }
 
+  const net = currentAdNetwork || 'direct';
   try {
     if (online) {
-      const res = await api('/ads/claim', { method: 'POST', body: { network: 'direct' } });
+      const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
       player.stars = res.stars;
       player.weeklyStars = res.weeklyStars;
       poolData.adsWatchedToday = res.adsToday;
       startCooldownTimer(res.cooldownSeconds || 60);
+      toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
     } else {
       player.stars = (player.stars || 0) + 1;
       player.weeklyStars = (player.weeklyStars || 0) + 1;
       poolData.adsWatchedToday = (poolData.adsWatchedToday || 0) + 1;
       storeGuest();
       startCooldownTimer(60);
+      toast(`🎉 +1 ⭐ Star credited! (In Telegram, stars convert into real USDT every Friday)`);
     }
 
     closeAdPlayer(true);
-    toast('🎉 Verified! +1 ⭐ Star credited to your weekly revenue share!');
     try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
     refreshPoolData();
     renderProfileBase();
   } catch (err) {
     toast(err.message);
-    $('ad-claim-btn').disabled = false;
-    $('ad-claim-btn').textContent = 'Try Claiming Again';
+    if (claimBtn) {
+      claimBtn.disabled = false;
+      claimBtn.textContent = 'Try Claiming Again';
+    }
   }
 }
 
@@ -2314,6 +2374,7 @@ for (const button of document.querySelectorAll('[data-view-target]')) {
 }
 $('pool-watch-ad-btn')?.addEventListener('click', openAdPlayer);
 $('sidebar-watch-ad-btn')?.addEventListener('click', openAdPlayer);
+$('arena-watch-ad-btn')?.addEventListener('click', openAdPlayer);
 $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
