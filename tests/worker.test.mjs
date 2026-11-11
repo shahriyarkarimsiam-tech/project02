@@ -813,6 +813,18 @@ test('POST /api/ads/claim supports multi-network tracking', async () => {
   assert.equal(gigaData.ok, true);
   assert.equal(gigaData.network, 'gigapub');
   assert.equal(gigaData.rewardStars, 1);
+
+  // Test Adsterra network claim
+  const adsterraResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'adsterra' })
+  }), { DB: mockDB, SESSION_SECRET, ADSTERRA_ZONE_ID: '32219036' });
+  assert.equal(adsterraResp.status, 200);
+  const adsterraData = await adsterraResp.json();
+  assert.equal(adsterraData.ok, true);
+  assert.equal(adsterraData.network, 'adsterra');
+  assert.equal(adsterraData.rewardStars, 1);
 });
 
 test('POST /api/ads/claim rejects with 400 when no real ads configured', async () => {

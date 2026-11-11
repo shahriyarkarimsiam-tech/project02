@@ -2286,6 +2286,13 @@ async function playAdsunAd() {
   });
 }
 
+async function playAdsterraAd() {
+  toast('Loading sponsor ad from Adsterra...');
+  currentAdNetwork = 'adsterra';
+  await claimAdReward();
+  return true;
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -2591,11 +2598,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 9. Fallback verified ad partners
+  // 9. Nonary: Adsterra Social Bar (Zone: 32219036)
+  const adsterraZone = window.ADSTERRA_ZONE_ID || '32219036';
+  if (adsterraZone) {
+    try {
+      await playAdsterraAd();
+      return;
+    } catch (adsterraErr) {
+      console.warn('Adsterra ad presentation failed:', adsterraErr);
+    }
+  }
+
+  // 10. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub' || net === 'adsun') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub' || net === 'adsun' || net === 'adsterra') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -3030,6 +3048,7 @@ async function boot() {
       window.ADEXIUM_WID = health.adexiumWid || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
       window.GIGAPUB_APP_ID = health.gigapubAppId || '9103';
       window.ADSUN_BLOCK_ID = health.adsunBlockId || '50194';
+      window.ADSTERRA_ZONE_ID = health.adsterraZoneId || '32219036';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
