@@ -909,15 +909,15 @@ async function handleAdPostback(request, env) {
   let uid, rawNet, secret, revenueParam, eventType, txId;
   if (request.method === 'POST') {
     const input = await bodyJSON(request).catch(() => ({}));
-    uid = input.user_id || input.subid || input.uid || input.click_id || input.ymid;
-    rawNet = input.network || 'monetag';
+    uid = input.user_id || input.subid || input.uid || input.click_id || input.ymid || input.telegramId || input.telegram_id;
+    rawNet = input.network || 'adsgram';
     secret = input.secret;
     revenueParam = input.revenue || input.payout || input.amount || input.estimated_price;
     eventType = input.event_type || input.event;
     txId = input.transaction_id || input.tx_id;
   } else {
-    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id') || url.searchParams.get('ymid');
-    rawNet = url.searchParams.get('network') || 'monetag';
+    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id') || url.searchParams.get('ymid') || url.searchParams.get('telegramId') || url.searchParams.get('telegram_id');
+    rawNet = url.searchParams.get('network') || 'adsgram';
     secret = url.searchParams.get('secret');
     revenueParam = url.searchParams.get('revenue') || url.searchParams.get('payout') || url.searchParams.get('amount') || url.searchParams.get('estimated_price');
     eventType = url.searchParams.get('event_type') || url.searchParams.get('event');
