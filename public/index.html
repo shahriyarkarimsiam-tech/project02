@@ -31,6 +31,16 @@
   <script src="https://w.tads.me/widget.js" async></script>
   <!-- Adexium Telegram Mini App SDK (WID: 4672c32d-e0b9-41f8-976d-c7ccc51ac091) -->
   <script type="text/javascript" src="https://cdn.tgads.space/assets/js/adexium-widget.min.js"></script>
+  <script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        const adexiumWidget = new AdexiumWidget({ wid: '4672c32d-e0b9-41f8-976d-c7ccc51ac091', adFormat: 'interstitial' });
+        adexiumWidget.autoMode();
+      } catch (e) {
+        console.warn('Adexium init note:', e);
+      }
+    });
+  </script>
   <script defer type="module" src="/app.mjs"></script>
 </head>
 <body data-theme="mint">
