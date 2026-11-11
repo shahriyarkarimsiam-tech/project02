@@ -21,7 +21,32 @@ const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(dat
 const fail = (status, message) => json({ error: message }, status);
 const now = () => Math.floor(Date.now() / 1000);
 const todayUTC = () => new Date().toISOString().slice(0, 10);
-function originAllowed(request) { const origin = request.headers.get('origin'); return !origin || origin === new URL(request.url).origin; }
+function originAllowed(request) {
+  const origin = request.headers.get('origin');
+  if (!origin || origin === 'null') return true;
+  try {
+    const u = new URL(origin);
+    const selfHost = new URL(request.url).host;
+    if (u.host === selfHost) return true;
+    if (u.host === 'telegram.org' || u.host.endsWith('.telegram.org') || u.host === 't.me' || u.host.endsWith('.t.me')) return true;
+  } catch {}
+  return false;
+}
+
+function corsHeaders(request) {
+  const origin = request.headers.get('origin');
+  if (!origin || origin === 'null') return {};
+  if (originAllowed(request)) {
+    return {
+      'access-control-allow-origin': origin,
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'content-type, authorization',
+      'access-control-allow-credentials': 'true',
+      'vary': 'Origin'
+    };
+  }
+  return {};
+}
 function sameSiteCookie(value) { return `ms_session=${value}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned; Max-Age=604800`; }
 async function getUser(request, env) {
   const authHeader = request.headers.get('authorization') || '';
@@ -979,7 +1004,18 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
-  if (method === 'OPTIONS') return fail(405, 'Not supported');
+  if (method === 'OPTIONS') {
+    if (originAllowed(request)) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...corsHeaders(request),
+          'access-control-max-age': '86400'
+        }
+      });
+    }
+    return fail(403, 'Invalid request origin');
+  }
 
   if (method === 'POST' && path === '/api/telegram/webhook') {
     return handleTelegramWebhook(request, env);
@@ -1620,8 +1656,25 @@ export async function handleScheduled(event, env) {
 
 export default {
   async fetch(request, env) {
-    try { return await route(request, env); }
-    catch (err) { console.error('Request failed:', err?.message || err); return fail(500, 'Unexpected server error'); }
+    try {
+      const response = await route(request, env);
+      const cors = corsHeaders(request);
+      if (Object.keys(cors).length > 0) {
+        const newHeaders = new Headers(response.headers);
+        for (const [k, v] of Object.entries(cors)) {
+          newHeaders.set(k, v);
+        }
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders
+        });
+      }
+      return response;
+    } catch (err) {
+      console.error('Request failed:', err?.message || err);
+      return fail(500, 'Unexpected server error');
+    }
   },
   async scheduled(event, env, ctx) {
     if (ctx?.waitUntil) {

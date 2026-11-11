@@ -1580,10 +1580,44 @@ async function refreshLeaderboard() {
   }
 }
 
-async function authenticate() {
-  if (!tg?.initData) return false;
+function getTelegramInitData() {
+  if (tg?.initData && tg.initData.length > 0) return tg.initData;
   try {
-    const res = await api('/auth/telegram', { method: 'POST', body: { initData: tg.initData } });
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const hashData = hashParams.get('tgWebAppData');
+    if (hashData) return hashData;
+    const searchParams = new URLSearchParams(window.location.search);
+    const searchData = searchParams.get('tgWebAppData');
+    if (searchData) return searchData;
+  } catch {}
+  return '';
+}
+
+async function authenticate() {
+  const initData = getTelegramInitData();
+  const tgUser = tg?.initDataUnsafe?.user;
+
+  // Immediately assign real Telegram name & ID so user is NEVER seen as generic "Guest player"
+  if (tgUser) {
+    const realName = tgUser.first_name
+      ? `${tgUser.first_name}${tgUser.last_name ? ' ' + tgUser.last_name : ''}`.trim()
+      : (tgUser.username || `Player ${tgUser.id}`);
+    player.name = realName;
+    player.id = String(tgUser.id);
+    if ($('player-name')) $('player-name').textContent = realName;
+    if ($('welcome-name')) $('welcome-name').textContent = realName;
+    if ($('player-avatar')) $('player-avatar').textContent = realName[0].toUpperCase();
+    if ($('profile-avatar')) $('profile-avatar').textContent = realName[0].toUpperCase();
+  }
+
+  if (!initData) {
+    console.warn('No Telegram initData found in environment');
+    return false;
+  }
+
+  try {
+    const res = await api('/auth/telegram', { method: 'POST', body: { initData } });
     if (res?.token) {
       authToken = res.token;
       try { sessionStorage.setItem('ms_auth_token', authToken); } catch {}
@@ -1595,10 +1629,10 @@ async function authenticate() {
     recentGames = data.recentGames || [];
     daily = data.daily || daily;
     applyTheme(player.equippedTheme);
+    renderProfileBase();
     return true;
   } catch (err) {
     console.warn('Telegram auth error:', err);
-    toast('Telegram sign-in unavailable. Practice mode is still playable.');
     return false;
   }
 }
@@ -2077,6 +2111,9 @@ async function claimAdReward() {
 
   const net = currentAdNetwork || 'direct';
   try {
+    if (!online && (getTelegramInitData() || tg?.initDataUnsafe?.user)) {
+      await authenticate();
+    }
     if (online) {
       const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
       player.stars = res.stars;
@@ -2466,24 +2503,21 @@ async function boot() {
     }
   } catch {}
 
-  if (!(await authenticate())) {
+  const authOk = await authenticate();
+  if (!authOk) {
+    const tgUser = tg?.initDataUnsafe?.user;
+    const realName = tgUser ? (tgUser.first_name ? `${tgUser.first_name}${tgUser.last_name ? ' ' + tgUser.last_name : ''}`.trim() : (tgUser.username || `Player ${tgUser.id}`)) : 'Guest player';
     player = { ...emptyPlayer(), ...read('ms_demo_player_v2', {}) };
-    player.stars = 0;
-    player.weeklyStars = 0;
-    player.usdtBalance = 0.0;
+    if (tgUser) {
+      player.name = realName;
+      player.id = String(tgUser.id);
+    }
     recentGames = read('ms_demo_recent', []);
     daily = read('ms_demo_daily', daily);
     refreshGuestDaily();
     player.streak = localStreak();
     applyTheme(player.equippedTheme);
-    storeGuest();
-    try {
-      const stored = read('ms_demo_player_v2', {});
-      stored.stars = 0;
-      stored.weeklyStars = 0;
-      stored.usdtBalance = 0.0;
-      localStorage.setItem('ms_demo_player_v2', JSON.stringify(stored));
-    } catch {}
+    renderProfileBase();
   }
 
   const urlParamGame = new URLSearchParams(window.location.search).get('game');

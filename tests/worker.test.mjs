@@ -49,6 +49,19 @@ test('auth endpoint refuses cross-origin requests', async () => {
   assert.equal(response.status, 403);
 });
 
+test('auth endpoint allows Telegram Web cross-origin requests with CORS', async () => {
+  const preflight = await worker.fetch(new Request('https://example.com/api/auth/telegram', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://web.telegram.org',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,authorization'
+    }
+  }), { BOT_TOKEN: 'token', SESSION_SECRET, DB: {} });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://web.telegram.org');
+});
+
 test('auth fails closed when secrets or D1 are missing', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/auth/telegram', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
