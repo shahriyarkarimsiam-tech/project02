@@ -163,6 +163,13 @@ function renderProfileBase() {
   $('profile-memory-best').textContent = num(player.bestMemoryScore || 0);
   $('profile-viper-best').textContent = num(player.bestViperScore || 0);
   $('profile-streak').textContent = num(player.streak);
+  if ($('profile-total-stars')) $('profile-total-stars').textContent = num(player.stars || 0);
+  if ($('profile-total-earned')) $('profile-total-earned').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
+  if ($('wallet-usdt-balance')) $('wallet-usdt-balance').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
+  if ($('quick-all-val')) $('quick-all-val').textContent = Number(player.usdtBalance || 0).toFixed(2);
+  if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
+    $('wallet-address-input').value = poolData.payoutWallet || player.payoutWallet;
+  }
 
   updateRank();
   updateDailyUI();
@@ -1645,6 +1652,8 @@ async function refreshPoolData() {
 
   if ($('wallet-usdt-balance')) $('wallet-usdt-balance').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
   if ($('quick-all-val')) $('quick-all-val').textContent = Number(player.usdtBalance || 0).toFixed(2);
+  if ($('profile-total-stars')) $('profile-total-stars').textContent = num(player.stars || 0);
+  if ($('profile-total-earned')) $('profile-total-earned').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
   if ($('pool-daily-count')) $('pool-daily-count').textContent = `${poolData.adsWatchedToday || 0} / 20 ads watched today`;
 
   if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
