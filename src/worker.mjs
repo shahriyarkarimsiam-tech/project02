@@ -389,6 +389,7 @@ async function handleTelegramWebhook(request, env) {
     if (!message || !message.chat?.id) return json({ ok: true });
     const chatId = message.chat.id;
     const firstName = message.from?.first_name || 'Player';
+    const safeFirstName = String(firstName).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, ' ').trim() || 'Player';
     const text = String(message.text || '').trim();
     const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
 
@@ -407,7 +408,7 @@ async function handleTelegramWebhook(request, env) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${firstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
+          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${safeFirstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
           parse_mode: 'Markdown'
         })
       });
@@ -686,12 +687,12 @@ async function handleTelegramWebhook(request, env) {
 
     // 9. /taskkit or /earn or /tasks command
     if (text === '/taskkit' || text === '/earn' || text === '/tasks') {
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      const sendRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `💼 *TaskKit IO (@taskkitio_bot) — Official Sister Earning Project*\n\nWant to earn even more money alongside Merge Streak?\n\n*TaskKit* is our dedicated microtask platform where you get paid for quick online actions:\n• 📝 Complete fast social & engagement microtasks\n• 📱 Test new apps and visit verified Web3 sponsors\n• 💵 Earn real cash & crypto rewards\n• ⚡ 100% free to join and start earning today!\n\n👇 *Tap below to launch TaskKit and boost your daily income:*`,
+          text: `💼 *TaskKit IO* (@taskkitio_bot) — *Official Sister Earning Project*\n\nWant to earn even more money alongside Merge Streak?\n\n*TaskKit* is our dedicated microtask platform where you get paid for quick online actions:\n• 📝 Complete fast social & engagement microtasks\n• 📱 Test new apps and visit verified Web3 sponsors\n• 💵 Earn real cash & crypto rewards\n• ⚡ 100% free to join and start earning today!\n\n👇 *Tap below to launch TaskKit and boost your daily income:*`,
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
@@ -705,15 +706,16 @@ async function handleTelegramWebhook(request, env) {
           }
         })
       });
+      if (!sendRes.ok) console.error('Telegram /taskkit send error:', sendRes.status, await sendRes.text());
       return json({ ok: true });
     }
 
-    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+    const welcomeRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 *Earn More With TaskKit (@taskkitio_bot):*\nComplete microtasks & bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
+        text: `👋 Hello *${safeFirstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 *Earn More With TaskKit* (@taskkitio_bot):\nComplete microtasks & bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
@@ -742,6 +744,7 @@ async function handleTelegramWebhook(request, env) {
         }
       })
     });
+    if (!welcomeRes.ok) console.error('Telegram welcome send error:', welcomeRes.status, await welcomeRes.text());
   } catch (err) {
     console.error('Webhook error:', err);
   }
