@@ -789,6 +789,30 @@ test('POST /api/ads/claim supports multi-network tracking', async () => {
   assert.equal(data.ok, true);
   assert.equal(data.network, 'monetag');
   assert.equal(data.rewardStars, 1);
+
+  // Test Adsun network claim
+  const adsunResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'adsun' })
+  }), { DB: mockDB, SESSION_SECRET, ADSUN_BLOCK_ID: '50194' });
+  assert.equal(adsunResp.status, 200);
+  const adsunData = await adsunResp.json();
+  assert.equal(adsunData.ok, true);
+  assert.equal(adsunData.network, 'adsun');
+  assert.equal(adsunData.rewardStars, 1);
+
+  // Test GigaPub network claim
+  const gigaResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'gigapub' })
+  }), { DB: mockDB, SESSION_SECRET, GIGAPUB_APP_ID: '9103' });
+  assert.equal(gigaResp.status, 200);
+  const gigaData = await gigaResp.json();
+  assert.equal(gigaData.ok, true);
+  assert.equal(gigaData.network, 'gigapub');
+  assert.equal(gigaData.rewardStars, 1);
 });
 
 test('POST /api/ads/claim rejects with 400 when no real ads configured', async () => {
