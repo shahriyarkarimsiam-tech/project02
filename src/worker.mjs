@@ -1387,7 +1387,7 @@ async function route(request, env) {
         userEstimatedShareUsdt,
         userUsdtBalance,
         adsWatchedToday,
-        dailyCap: DAILY_AD_CAP,
+        dailyCap: null,
         cooldownSecondsRemaining: cooldownRemaining,
         minWithdrawalUsdt: MIN_WITHDRAWAL_USDT,
         payoutWallet: player?.payout_wallet || null,
@@ -1432,9 +1432,7 @@ async function route(request, env) {
 
       const dailyAds = await env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, stamp - DAY).first();
       const adsToday = dailyAds?.count || 0;
-      if (adsToday >= DAILY_AD_CAP) {
-        return fail(429, 'Daily ad limit reached (20 ads / 24 hours). Come back tomorrow!');
-      }
+      // Unlimited daily ads: players can watch unlimited ads across all partner networks (governed only by 60s cooldown)
 
       const weekId = currentWeekId();
       const impressionId = crypto.randomUUID();
@@ -1464,7 +1462,7 @@ async function route(request, env) {
         stars: updated ? updated.stars : (player?.stars || 0) + 1,
         weeklyStars: updated ? updated.weekly_stars : (player?.weekly_stars || 0) + 1,
         adsToday: adsToday + 1,
-        dailyCap: DAILY_AD_CAP,
+        dailyCap: null,
         cooldownSeconds: 60
       });
     }

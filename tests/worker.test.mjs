@@ -203,7 +203,7 @@ test('GET /api/ads/pool returns weekly pool data and user calculations', async (
   assert.equal(data.userEstimatedShareUsdt, 0.20);
   assert.equal(data.userUsdtBalance, 1.50);
   assert.equal(data.adsWatchedToday, 5);
-  assert.equal(data.dailyCap, 20);
+  assert.equal(data.dailyCap, null);
   assert.equal(data.cooldownSecondsRemaining, 0);
   assert.equal(data.minWithdrawalUsdt, 10.00);
   assert.equal(data.payoutWallet, 'UQTestWallet');
@@ -242,25 +242,33 @@ test('POST /api/ads/claim enforces 60s cooldown', async () => {
   assert(data.error.includes('Ad cooldown active'));
 });
 
-test('POST /api/ads/claim enforces 20 ads per 24 hours daily cap', async () => {
+test('POST /api/ads/claim allows watching beyond 20 ads with unlimited daily capacity', async () => {
   const auth = await authHeader('1001');
+  let batchCalled = false;
   const mockDB = {
     prepare(query) {
       return {
         bind(...args) {
           return {
             async first() {
-              if (query.includes('FROM players')) {
+              if (query.includes('SELECT stars, weekly_stars, usdt_balance, last_ad_at FROM players')) {
                 return { stars: 20, weekly_stars: 20, usdt_balance: 0, last_ad_at: 0 };
               }
               if (query.includes('FROM ad_impressions')) {
-                return { count: 20 }; // reached daily cap
+                return { count: 20 }; // already watched 20 ads
+              }
+              if (query.includes('SELECT stars, weekly_stars, usdt_balance FROM players')) {
+                return { stars: 21, weekly_stars: 21, usdt_balance: 0 };
               }
               return null;
             }
           };
         }
       };
+    },
+    async batch(stmts) {
+      batchCalled = true;
+      return [];
     }
   };
 
@@ -270,9 +278,13 @@ test('POST /api/ads/claim enforces 20 ads per 24 hours daily cap', async () => {
     body: JSON.stringify({ network: 'direct' })
   }), { DB: mockDB, SESSION_SECRET, ADS_ACTIVE: 'true' });
 
-  assert.equal(response.status, 429);
+  assert.equal(response.status, 200);
   const data = await response.json();
-  assert(data.error.includes('Daily ad limit reached'));
+  assert.equal(data.ok, true);
+  assert.equal(data.stars, 21);
+  assert.equal(data.adsToday, 21);
+  assert.equal(data.dailyCap, null);
+  assert(batchCalled);
 });
 
 test('POST /api/ads/claim successfully awards 1 star and records impression', async () => {

@@ -65,7 +65,7 @@ test('constants match Friday settlement specifications', () => {
   assert.equal(SETTLEMENT_DAY_NAME, 'Friday');
   assert.equal(SETTLEMENT_DAY_INDEX, 5);
   assert.equal(REVENUE_SHARE_RATIO, 0.50);
-  assert.equal(DAILY_AD_CAP, 20);
+  assert.equal(DAILY_AD_CAP, Infinity);
   assert.equal(AD_COOLDOWN_SECONDS, 60);
   assert.equal(MIN_WITHDRAWAL_USDT, 10.00);
 });

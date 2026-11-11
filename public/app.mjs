@@ -2400,7 +2400,7 @@ let poolData = {
   userEstimatedShareUsdt: 0.0,
   userUsdtBalance: 0.0,
   adsWatchedToday: 0,
-  dailyCap: 20,
+  dailyCap: null,
   cooldownSecondsRemaining: 0,
   minWithdrawalUsdt: 10.00,
   payoutWallet: ''
@@ -2488,7 +2488,7 @@ async function refreshPoolData() {
   if ($('quick-all-val')) $('quick-all-val').textContent = Number(player.usdtBalance || 0).toFixed(2);
   if ($('profile-total-stars')) $('profile-total-stars').textContent = num(player.stars || 0);
   if ($('profile-total-earned')) $('profile-total-earned').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
-  if ($('pool-daily-count')) $('pool-daily-count').textContent = `${poolData.adsWatchedToday || 0} / 20 ads watched today`;
+  if ($('pool-daily-count')) $('pool-daily-count').textContent = `${poolData.adsWatchedToday || 0} ads watched today · Unlimited`;
 
   if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
     $('wallet-address-input').value = poolData.payoutWallet || player.payoutWallet;
@@ -2585,17 +2585,13 @@ function getActiveRotationList() {
 
 function updateCooldownDisplay() {
   const live = hasLiveAds();
-  const isCapped = poolData.adsWatchedToday >= 20;
-  const ready = live && !isCapped && currentCooldown <= 0;
+  const ready = live && currentCooldown <= 0;
 
   const poolChip = $('pool-ad-status-chip');
   if (poolChip) {
     if (!live) {
       poolChip.textContent = 'NO ADS ACTIVE';
       poolChip.className = 'soft-chip locked';
-    } else if (isCapped) {
-      poolChip.textContent = 'DAILY LIMIT REACHED';
-      poolChip.className = 'soft-chip';
     } else if (currentCooldown > 0) {
       poolChip.textContent = `COOLDOWN (${currentCooldown}S)`;
       poolChip.className = 'soft-chip';
@@ -2610,9 +2606,6 @@ function updateCooldownDisplay() {
     if (!live) {
       arenaChip.textContent = 'NO ADS ACTIVE';
       arenaChip.className = 'soft-chip locked';
-    } else if (isCapped) {
-      arenaChip.textContent = 'DAILY LIMIT';
-      arenaChip.className = 'soft-chip';
     } else if (currentCooldown > 0) {
       arenaChip.textContent = `COOLDOWN (${currentCooldown}S)`;
       arenaChip.className = 'soft-chip';
@@ -2624,15 +2617,15 @@ function updateCooldownDisplay() {
 
   const cooldownText = !live
     ? 'Real sponsor ads opening soon. Stars are only awarded for real completed sponsor ads.'
-    : (isCapped ? 'Daily limit reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday!'));
+    : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! Unlimited ads available.');
 
   if ($('pool-cooldown-text')) $('pool-cooldown-text').textContent = cooldownText;
   if ($('sidebar-cooldown-text')) $('sidebar-cooldown-text').textContent = !live ? 'Opening soon' : cooldownText;
-  if ($('arena-cooldown-text')) $('arena-cooldown-text').textContent = !live ? 'No active sponsor ads right now. Stars are strictly awarded for real completed sponsor ads.' : (isCapped ? 'Daily cap reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Ad cooldown active: next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown.'));
+  if ($('arena-cooldown-text')) $('arena-cooldown-text').textContent = !live ? 'No active sponsor ads right now. Stars are strictly awarded for real completed sponsor ads.' : (currentCooldown > 0 ? `Ad cooldown active: next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown · Unlimited.');
 
   const btnText = !live
     ? '⏸ No Ads Available Right Now'
-    : (isCapped ? 'Daily Limit Reached (20/20)' : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)'));
+    : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)');
 
   if ($('pool-watch-ad-btn')) {
     $('pool-watch-ad-btn').disabled = !ready;
@@ -2640,7 +2633,7 @@ function updateCooldownDisplay() {
   }
   if ($('sidebar-watch-ad-btn')) {
     $('sidebar-watch-ad-btn').disabled = !ready;
-    $('sidebar-watch-ad-btn').textContent = !live ? 'No Ads Available' : (isCapped ? 'Daily Cap (20/20)' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)'));
+    $('sidebar-watch-ad-btn').textContent = !live ? 'No Ads Available' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)');
   }
   if ($('arena-watch-ad-btn')) {
     $('arena-watch-ad-btn').disabled = !ready;
@@ -2665,10 +2658,6 @@ function startCooldownTimer(seconds = 60) {
 async function openAdPlayer() {
   if (currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
-    return;
-  }
-  if (poolData.adsWatchedToday >= 20) {
-    toast('Daily limit reached (20 ads / 24 hours). Come back tomorrow!');
     return;
   }
 
