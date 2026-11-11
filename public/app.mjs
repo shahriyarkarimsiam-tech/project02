@@ -1736,6 +1736,25 @@ function initAdsGramSDK() {
   }
 }
 
+async function playAdsGramAd() {
+  const blockId = String(window.ADSGRAM_BLOCK_ID || '59239');
+  if (!window.Adsgram) {
+    throw new Error('AdsGram SDK not loaded');
+  }
+  initAdsGramSDK();
+  if (!adsgramController) {
+    throw new Error('AdsGram controller not ready');
+  }
+  toast('Loading sponsor video from AdsGram...');
+  const res = await adsgramController.show();
+  if (res?.done) {
+    currentAdNetwork = 'adsgram';
+    await claimAdReward();
+    return true;
+  }
+  throw new Error('AdsGram video ad not completed');
+}
+
 function initMonetagInApp() {
   const zoneId = window.MONETAG_ZONE_ID || '12239871';
   const fnName = `show_${zoneId}`;
@@ -1745,14 +1764,14 @@ function initMonetagInApp() {
         window[fnName]({
           type: 'inApp',
           inAppSettings: {
-            frequency: 2,
-            capping: 0.1,
-            interval: 30,
+            frequency: 1,
+            capping: 0.05,
+            interval: 180,
             timeout: 5,
             everyPage: false
           }
         });
-        console.log('[Monetag] In-App Interstitial configured');
+        console.log('[Monetag] Fair In-App Interstitial configured');
       } catch (e) {
         console.warn('[Monetag] In-App Interstitial notice:', e);
       }
@@ -1827,7 +1846,7 @@ async function playMonetagAd() {
     await claimAdReward();
     return true;
   }
-  return false;
+  throw new Error('Monetag ad presentation was not completed');
 }
 
 let onclickaShowFn = null;
@@ -2079,15 +2098,34 @@ async function playTadsAd() {
     if (!window.tads) {
       return reject(new Error('TADS SDK not available'));
     }
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('TADS ad load timeout'));
+      }
+    }, 7000);
+
     try {
       if (typeof window.tads.renderTadsWidget === 'function') {
         window.tads.renderTadsWidget({
           id: widgetId,
           type: 'fullscreen',
           onShowReward: async () => {
-            currentAdNetwork = 'tads';
-            await claimAdReward();
-            resolve(true);
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              currentAdNetwork = 'tads';
+              await claimAdReward();
+              resolve(true);
+            }
+          },
+          onAdsNotFound: () => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              reject(new Error('TADS no fill available'));
+            }
           }
         });
       } else if (typeof window.tads.init === 'function') {
@@ -2095,15 +2133,28 @@ async function playTadsAd() {
           widgetId,
           type: 'fullscreen',
           onShowReward: async () => {
-            currentAdNetwork = 'tads';
-            await claimAdReward();
-            resolve(true);
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              currentAdNetwork = 'tads';
+              await claimAdReward();
+              resolve(true);
+            }
+          },
+          onAdsNotFound: () => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              reject(new Error('TADS no fill available'));
+            }
           }
         });
       } else {
+        clearTimeout(timer);
         reject(new Error('TADS display method not available'));
       }
     } catch (err) {
+      clearTimeout(timer);
       console.warn('[TADS] presentation error:', err);
       reject(err);
     }
@@ -2156,7 +2207,7 @@ async function playAdexiumAd() {
           resolved = true;
           reject(new Error('Adexium ad load timeout'));
         }
-      }, 8000);
+      }, 7000);
 
       const ads = await adexiumWidget.requestRewardedAd('interstitial').catch(() => null);
       if (Array.isArray(ads) && ads.length > 0) {
@@ -2196,7 +2247,7 @@ async function playGigaPubAd() {
         resolved = true;
         reject(new Error('GigaPub ad load timeout'));
       }
-    }, 12000);
+    }, 8000);
 
     window.showGiga()
       .then(async () => {
@@ -2223,9 +2274,16 @@ let adsunController = null;
 
 function initAdsunSDK() {
   const blockId = String(window.ADSUN_BLOCK_ID || '50194');
-  if (window.Adsun && !adsunController) {
+  const AdsunSDK = window.Adsun || window.AdSun || window.adsun;
+  if (AdsunSDK && !adsunController) {
     try {
-      adsunController = window.Adsun.init({ blockId, debug: false });
+      if (typeof AdsunSDK.init === 'function') {
+        adsunController = AdsunSDK.init({ blockId, debug: false });
+      } else if (typeof AdsunSDK === 'function') {
+        adsunController = new AdsunSDK({ blockId, debug: false });
+      } else {
+        adsunController = AdsunSDK;
+      }
       console.log('[Adsun] Controller initialized (Block ID: ' + blockId + ')');
     } catch (e) {
       console.warn('[Adsun] init notice:', e);
@@ -2237,13 +2295,15 @@ async function playAdsunAd() {
   const blockId = String(window.ADSUN_BLOCK_ID || '50194');
   toast('Loading sponsor ad from Adsun...');
   return new Promise(async (resolve, reject) => {
-    if (!window.Adsun) {
+    const AdsunSDK = window.Adsun || window.AdSun || window.adsun;
+    if (!AdsunSDK) {
       for (let i = 0; i < 20; i++) {
         await new Promise(r => setTimeout(r, 100));
-        if (window.Adsun) break;
+        if (window.Adsun || window.AdSun || window.adsun) break;
       }
     }
-    if (!window.Adsun) {
+    const AvailableSDK = window.Adsun || window.AdSun || window.adsun;
+    if (!AvailableSDK) {
       return reject(new Error('Adsun SDK not available'));
     }
     try {
@@ -2259,7 +2319,7 @@ async function playAdsunAd() {
           resolved = true;
           reject(new Error('Adsun ad timeout'));
         }
-      }, 12000);
+      }, 7000);
 
       adsunController.show()
         .then(async (result) => {
@@ -2409,7 +2469,30 @@ async function refreshPoolData() {
   updateCountdownClocks();
 }
 
-const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.ONCLICKA_SPOT_ID || window.RICHADS_VAST_URL || window.LIVE_ADS_ACTIVE);
+const hasLiveAds = () => Boolean(
+  window.ADSGRAM_BLOCK_ID ||
+  window.MONETAG_ZONE_ID ||
+  window.ONCLICKA_SPOT_ID ||
+  window.RICHADS_VAST_URL ||
+  window.TADS_WIDGET_ID ||
+  window.ADEXIUM_WID ||
+  window.GIGAPUB_APP_ID ||
+  window.ADSUN_BLOCK_ID ||
+  window.ADSTERRA_ZONE_ID ||
+  window.LIVE_ADS_ACTIVE
+);
+
+const AD_PROVIDERS = [
+  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd },
+  { id: 'adsun', name: 'Adsun', play: playAdsunAd },
+  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd },
+  { id: 'adexium', name: 'Adexium', play: playAdexiumAd },
+  { id: 'tads', name: 'TADS', play: playTadsAd },
+  { id: 'richads', name: 'RichAds', play: playRichAdsVideo },
+  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd },
+  { id: 'adsterra', name: 'Adsterra', play: playAdsterraAd },
+  { id: 'monetag', name: 'Monetag', play: playMonetagAd }
+];
 
 function updateCooldownDisplay() {
   const live = hasLiveAds();
@@ -2500,137 +2583,41 @@ async function openAdPlayer() {
     return;
   }
 
-  // 1. Primary: AdsGram Rewarded Video (UnitID: 59239)
-  const adsgramBlock = window.ADSGRAM_BLOCK_ID || '59239';
-  if (window.Adsgram && adsgramBlock) {
+  // Fair Zero-Bias Round-Robin across all 9 partner networks:
+  let startIdx = 0;
+  try {
+    const saved = localStorage.getItem('ms_ad_rotation_index');
+    startIdx = saved !== null ? parseInt(saved, 10) : Math.floor(Math.random() * AD_PROVIDERS.length);
+    if (isNaN(startIdx) || startIdx < 0 || startIdx >= AD_PROVIDERS.length) startIdx = 0;
+  } catch {
+    startIdx = 0;
+  }
+
+  // Advance index for the subsequent request so the next network gets primary priority
+  const nextIdx = (startIdx + 1) % AD_PROVIDERS.length;
+  try {
+    localStorage.setItem('ms_ad_rotation_index', String(nextIdx));
+  } catch {}
+
+  // Construct rotated list starting at startIdx
+  const rotatedProviders = [
+    ...AD_PROVIDERS.slice(startIdx),
+    ...AD_PROVIDERS.slice(0, startIdx)
+  ];
+
+  console.log(`[AdRotation] Starting round-robin at #${startIdx} (${rotatedProviders[0].name}). Total available: ${rotatedProviders.length}`);
+
+  for (const provider of rotatedProviders) {
     try {
-      initAdsGramSDK();
-      if (adsgramController) {
-        toast('Loading sponsor video from AdsGram...');
-        const res = await adsgramController.show();
-        if (res?.done) {
-          currentAdNetwork = 'adsgram';
-          await claimAdReward();
-          return;
-        } else {
-          toast('Video ad was not completed. 0 Stars awarded.');
-          return;
-        }
+      console.log(`[AdRotation] Attempting provider: ${provider.name} (${provider.id})...`);
+      const played = await provider.play();
+      if (played) {
+        console.log(`[AdRotation] Successfully completed ad via ${provider.name}`);
+        return;
       }
-    } catch (adsgramErr) {
-      console.warn('AdsGram ad failed or no fill, falling back to Monetag:', adsgramErr);
-    }
-  }
-
-  // 2. Secondary: Monetag SDK integration (Zone: 12239871)
-  const monetagZone = window.MONETAG_ZONE_ID || '12239871';
-  if (monetagZone) {
-    try {
-      await playMonetagAd();
-      return;
-    } catch (monetagErr) {
-      console.warn('Monetag ad presentation failed:', monetagErr);
-    }
-  }
-
-  // 3. Tertiary: OnClickA TMA Rewarded Video (Spot: 6155185)
-  const onclickaSpot = window.ONCLICKA_SPOT_ID || '6155185';
-  if (onclickaSpot) {
-    try {
-      await playOnClickAAd();
-      return;
-    } catch (onclickaErr) {
-      console.warn('OnClickA ad presentation failed:', onclickaErr);
-    }
-  }
-
-  // 4. Quaternary: RichAds VAST Video Ad (PubID: 1028723, SiteID: 412421)
-  const richadsUrl = window.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
-  if (richadsUrl) {
-    try {
-      await playRichAdsVideo();
-      return;
-    } catch (richadsErr) {
-      console.warn('RichAds presentation failed:', richadsErr);
-    }
-  }
-
-  // 5. Quinary: TADS Telegram Ad Network (Widget: 13243)
-  const tadsWidget = window.TADS_WIDGET_ID || '13243';
-  if (tadsWidget) {
-    try {
-      await playTadsAd();
-      return;
-    } catch (tadsErr) {
-      console.warn('TADS ad presentation failed:', tadsErr);
-    }
-  }
-
-  // 6. Senary: Adexium Telegram Mini App SDK (WID: 4672c32d-e0b9-41f8-976d-c7ccc51ac091)
-  const adexiumWid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
-  if (adexiumWid) {
-    try {
-      await playAdexiumAd();
-      return;
-    } catch (adexiumErr) {
-      console.warn('Adexium ad presentation failed:', adexiumErr);
-    }
-  }
-
-  // 7. Septenary: GigaPub Telegram Ad Network (App ID: 9103)
-  const gigaAppId = window.GIGAPUB_APP_ID || '9103';
-  if (gigaAppId) {
-    try {
-      await playGigaPubAd();
-      return;
-    } catch (gigaErr) {
-      console.warn('GigaPub ad presentation failed:', gigaErr);
-    }
-  }
-
-  // 8. Octonary: Adsun Telegram Ad Network (Block ID: 50194)
-  const adsunBlockId = window.ADSUN_BLOCK_ID || '50194';
-  if (adsunBlockId) {
-    try {
-      await playAdsunAd();
-      return;
-    } catch (adsunErr) {
-      console.warn('Adsun ad presentation failed:', adsunErr);
-    }
-  }
-
-  // 9. Nonary: Adsterra Social Bar (Zone: 32219036)
-  const adsterraZone = window.ADSTERRA_ZONE_ID || '32219036';
-  if (adsterraZone) {
-    try {
-      await playAdsterraAd();
-      return;
-    } catch (adsterraErr) {
-      console.warn('Adsterra ad presentation failed:', adsterraErr);
-    }
-  }
-
-  // 10. Fallback verified ad partners
-  const activeNets = window.ACTIVE_AD_NETWORKS || {};
-  const activeKeys = Object.keys(activeNets);
-  for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub' || net === 'adsun' || net === 'adsterra') continue;
-    const cfg = activeNets[net];
-    const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
-    if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
-      currentAdNetwork = net;
-      const targetUrl = adUrl.includes('{user_id}')
-        ? adUrl.replace('{user_id}', encodeURIComponent(player.id))
-        : `${adUrl}${adUrl.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(player.id)}`;
-
-      toast(`Opening verified ad from ${net.toUpperCase()}...`);
-      try {
-        if (tg?.openLink) tg.openLink(targetUrl);
-        else window.open(targetUrl, '_blank');
-      } catch {
-        window.open(targetUrl, '_blank');
-      }
-      return;
+    } catch (err) {
+      console.warn(`[AdRotation] Provider ${provider.name} failed/no-fill, proceeding to next:`, err?.message || err);
+      // Waterfall continues to next provider in rotatedProviders list
     }
   }
 
