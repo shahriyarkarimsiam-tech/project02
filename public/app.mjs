@@ -2178,6 +2178,41 @@ async function playAdexiumAd() {
   });
 }
 
+async function playGigaPubAd() {
+  toast('Loading sponsor ad from GigaPub...');
+  return new Promise((resolve, reject) => {
+    if (typeof window.showGiga !== 'function') {
+      return reject(new Error('GigaPub SDK not available'));
+    }
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('GigaPub ad load timeout'));
+      }
+    }, 10000);
+
+    window.showGiga()
+      .then(async () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          currentAdNetwork = 'gigapub';
+          await claimAdReward();
+          resolve(true);
+        }
+      })
+      .catch((err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          console.warn('[GigaPub] presentation error:', err);
+          reject(err);
+        }
+      });
+  });
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -2461,11 +2496,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 7. Fallback verified ad partners
+  // 7. Septenary: GigaPub Telegram Ad Network (App ID: 9103)
+  const gigaAppId = window.GIGAPUB_APP_ID || '9103';
+  if (gigaAppId && typeof window.showGiga === 'function') {
+    try {
+      await playGigaPubAd();
+      return;
+    } catch (gigaErr) {
+      console.warn('GigaPub ad presentation failed:', gigaErr);
+    }
+  }
+
+  // 8. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2898,6 +2944,7 @@ async function boot() {
       window.RICHADS_PUB_ID = health.richadsPubId || '1028723';
       window.TADS_WIDGET_ID = health.tadsWidgetId || '13243';
       window.ADEXIUM_WID = health.adexiumWid || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
+      window.GIGAPUB_APP_ID = health.gigapubAppId || '9103';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
