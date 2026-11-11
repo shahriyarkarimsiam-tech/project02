@@ -2288,6 +2288,7 @@ async function playAdsunAd() {
 
 async function playAdsterraAd() {
   toast('Loading sponsor ad from Adsterra...');
+  await new Promise(r => setTimeout(r, 1500));
   currentAdNetwork = 'adsterra';
   await claimAdReward();
   return true;
