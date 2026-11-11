@@ -276,6 +276,29 @@ body[data-theme='midnight']{--accent:#85caff;--accent-strong:#5bb2eb;--accent-rg
 .pool-profile-cashout-banner{background:#111c2a;border:1px solid #23374c;border-radius:12px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:16px}
 .pool-profile-cashout-banner strong{display:block;font-size:13px;color:#e8f1fa;margin-bottom:3px}
 .pool-profile-cashout-banner p{font-size:11px;color:#859bb3;margin:0;line-height:1.4}
+
+/* User Withdrawal Activity */
+.user-withdrawals-section{margin-top:24px;padding-top:18px;border-top:1px solid #1e2c3f}
+.user-withdrawals-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.user-withdrawals-list{display:flex;flex-direction:column;gap:10px}
+.withdrawal-card{background:#0e1726;border:1px solid #23374c;border-radius:10px;padding:12px 14px;transition:border-color .15s ease}
+.withdrawal-card.status-pending{border-left:3px solid #f59e0b}
+.withdrawal-card.status-completed{border-left:3px solid #10b981}
+.withdrawal-card.status-rejected{border-left:3px solid #ef4444}
+.withdrawal-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
+.withdrawal-card-amount{font-size:16px;font-weight:700;color:#f8fafc}
+.withdrawal-status-badge{font-size:10px;font-weight:700;text-transform:uppercase;padding:3px 8px;border-radius:9999px;letter-spacing:.5px}
+.withdrawal-status-badge.pending{background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
+.withdrawal-status-badge.completed{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}
+.withdrawal-status-badge.rejected{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.withdrawal-card-details{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#859bb3}
+.withdrawal-card-details code{font-family:monospace;color:#50e3c2;word-break:break-all}
+.withdrawal-card-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px;color:#64748b}
+.bsc-link{color:#50e3c2;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.bsc-link:hover{text-decoration:underline}
+.withdrawal-reason-text{margin-top:6px;padding:6px 10px;background:rgba(239,68,68,.1);border-radius:6px;color:#fca5a5;font-size:12px}
+.withdrawal-pending-note{margin-top:6px;padding:6px 10px;background:rgba(245,158,11,.08);border-radius:6px;color:#fcd34d;font-size:12px}
+
 @media(max-width:700px){
   .pool-profile-cashout-banner{flex-direction:column;align-items:stretch;text-align:left}
   .bottom-nav{grid-template-columns:repeat(7,1fr)}

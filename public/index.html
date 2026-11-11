@@ -511,6 +511,20 @@
               <small class="pool-hint">Minimum cashout: <b>$10.00 USDT</b>. No weekly deadline — your balance accumulates safely over time. Withdraw anytime directly to your BEP-20 (BSC) wallet address!</small>
               <div id="wallet-status-msg" class="pool-status-msg" hidden></div>
             </form>
+
+            <!-- WITHDRAWAL ACTIVITY & HISTORY -->
+            <div class="user-withdrawals-section">
+              <div class="user-withdrawals-head">
+                <div>
+                  <span class="mini-label">📋 WITHDRAWAL ACTIVITY</span>
+                  <h3 style="margin:2px 0 0 0;font-size:15px;color:#f1f5f9;">Your Cashout Requests</h3>
+                </div>
+                <button type="button" class="btn btn-outline btn-xs" id="refresh-withdrawals-btn">↻ Refresh</button>
+              </div>
+              <div id="user-withdrawals-list" class="user-withdrawals-list">
+                <div class="empty-state">No withdrawal requests yet. Payouts and blockchain transaction hashes will appear here.</div>
+              </div>
+            </div>
           </section>
           <div class="dashboard-grid"><section class="surface"><div class="surface-head"><span class="mini-label">RECENT HISTORY</span></div><div id="profile-recent" class="recent-list"><div class="empty-state">No saved games yet.</div></div></section><section class="surface"><div class="surface-head"><span class="mini-label">ACHIEVEMENTS</span><button data-view-target="challenges" class="text-action">See all ↗</button></div><div id="profile-badges" class="profile-badges"></div><p class="muted-paragraph">Progress is tied to your Telegram profile when signed in.</p></section></div>
         </section>

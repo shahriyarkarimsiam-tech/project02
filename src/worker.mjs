@@ -111,6 +111,227 @@ async function recordReferral(env, referredId, rawRef) {
   }
 }
 
+async function sendAdminEmailNotification(env, { id, amount, network, address, player, requestedAt }) {
+  let adminEmail = env.ADMIN_EMAIL || 'shahriyarkarimsiam@gmail.com';
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare('SELECT value FROM system_settings WHERE key="admin_email"').first();
+      if (row?.value) adminEmail = row.value;
+    } catch {}
+  }
+  if (!adminEmail) return;
+
+  const bscScanAddressUrl = `https://bscscan.com/address/${address}`;
+  const dateStr = new Date((requestedAt || now()) * 1000).toUTCString();
+  const playerName = player?.display_name || player?.name || 'Player';
+  const playerId = player?.id || 'unknown';
+
+  const html = `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:24px;background:#090d16;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;">
+  <div style="max-width:560px;margin:0 auto;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:24px;box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <span style="font-size:24px;">🚨</span>
+      <h2 style="margin:0;color:#38bdf8;font-size:20px;">New Withdrawal Request</h2>
+    </div>
+    <p style="color:#94a3b8;font-size:14px;margin-top:0;">A user has submitted a USDT withdrawal in Merge Streak Arcade. Please execute manual transfer on BEP-20.</p>
+    
+    <div style="background:#0b1120;border:1px solid #1e293b;border-radius:8px;padding:16px;margin:16px 0;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <tr style="border-bottom:1px solid #1e293b;"><td style="padding:8px 0;color:#64748b;">Withdrawal ID:</td><td style="padding:8px 0;font-family:monospace;font-weight:600;color:#f1f5f9;">${id}</td></tr>
+        <tr style="border-bottom:1px solid #1e293b;"><td style="padding:8px 0;color:#64748b;">Amount:</td><td style="padding:8px 0;font-size:18px;font-weight:700;color:#10b981;">$${Number(amount).toFixed(2)} USDT</td></tr>
+        <tr style="border-bottom:1px solid #1e293b;"><td style="padding:8px 0;color:#64748b;">Network:</td><td style="padding:8px 0;color:#f59e0b;font-weight:600;">${network} (BNB Smart Chain)</td></tr>
+        <tr style="border-bottom:1px solid #1e293b;"><td style="padding:8px 0;color:#64748b;">Destination Wallet:</td><td style="padding:8px 0;font-family:monospace;word-break:break-all;color:#38bdf8;">${address}</td></tr>
+        <tr style="border-bottom:1px solid #1e293b;"><td style="padding:8px 0;color:#64748b;">Player:</td><td style="padding:8px 0;color:#f1f5f9;">${playerName} (ID: ${playerId})</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Requested At:</td><td style="padding:8px 0;color:#cbd5e1;">${dateStr}</td></tr>
+      </table>
+    </div>
+
+    <div style="margin:16px 0;text-align:center;">
+      <a href="${bscScanAddressUrl}" style="display:inline-block;background:#0284c7;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px;" target="_blank">
+        View Address on BscScan ↗
+      </a>
+    </div>
+
+    <div style="background:#172554;border:1px solid #1e40af;border-radius:8px;padding:14px;margin-top:20px;">
+      <b style="color:#93c5fd;font-size:13px;">📋 Manual Action Steps:</b>
+      <ol style="margin:8px 0 0 0;padding-left:18px;color:#cbd5e1;font-size:13px;line-height:1.5;">
+        <li>Send <b>$${Number(amount).toFixed(2)} USDT</b> to <code>${address}</code> via <b>BEP-20 (BSC)</b>.</li>
+        <li>Copy the BSC Transaction Hash.</li>
+        <li>Reply to Telegram Bot: <code>/payout_complete ${id} 0xTX_HASH</code> (or notify Antigravity in chat).</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    await fetch('https://api.mailchannels.net/tx/v1/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: adminEmail, name: 'Arcade Admin' }] }],
+        from: { email: 'withdrawals@mergestreak.app', name: 'Merge Streak Arcade' },
+        subject: `🚨 [Merge Streak] New Withdrawal Request: $${Number(amount).toFixed(2)} USDT (${network})`,
+        content: [{ type: 'text/html', value: html }]
+      })
+    }).catch(err => console.warn('MailChannels delivery error:', err));
+  } catch (err) {
+    console.warn('Failed to send admin withdrawal email:', err);
+  }
+}
+
+async function sendAdminTelegramWithdrawalNotification(env, { id, amount, network, address, player, requestedAt }) {
+  if (!env.BOT_TOKEN) return;
+  let adminChatId = env.ADMIN_TELEGRAM_ID;
+  if (!adminChatId && env.DB) {
+    try {
+      const row = await env.DB.prepare('SELECT value FROM system_settings WHERE key="admin_telegram_id"').first();
+      if (row?.value) adminChatId = row.value;
+    } catch {}
+  }
+  if (!adminChatId) return;
+
+  const playerName = player?.display_name || player?.name || 'Player';
+  const text = `🚨 *NEW USDT WITHDRAWAL REQUEST!*
+
+• *ID:* \`${id}\`
+• *Player:* ${playerName} (\`${player?.id || ''}\`)
+• *Amount:* *$${Number(amount).toFixed(2)} USDT*
+• *Network:* ${network} (BNB Smart Chain)
+• *Destination Wallet:*
+\`${address}\`
+
+🔗 [View Address on BscScan](https://bscscan.com/address/${address})
+
+━━━━━━━━━━━━━━━━━
+📋 *Manual Transfer Action:*
+1. Send *$${Number(amount).toFixed(2)} USDT* to the address on BEP-20.
+2. Reply with:
+\`/payout_complete ${id} 0xYOUR_TX_HASH\`
+*(Or reply \`/payout_reject ${id} reason\` to refund user)*`;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: adminChatId,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true
+      })
+    });
+  } catch (err) {
+    console.warn('Failed to send Telegram admin withdrawal alert:', err);
+  }
+}
+
+async function executePayoutComplete(env, reqId, txHash, adminNote = null) {
+  if (!env.DB) throw new Error('Database unavailable');
+  const req = await env.DB.prepare(
+    'SELECT id, player_id, amount_usdt, network, wallet_address, status FROM withdrawal_requests WHERE id=?'
+  ).bind(reqId).first();
+
+  if (!req) throw new Error(`Withdrawal request ${reqId} not found`);
+  if (req.status !== 'pending') throw new Error(`Request is already ${req.status}`);
+
+  const stamp = now();
+  await env.DB.prepare(
+    'UPDATE withdrawal_requests SET status="completed", tx_hash=?, admin_note=?, processed_at=? WHERE id=?'
+  ).bind(txHash, adminNote, stamp, reqId).run();
+
+  if (env.BOT_TOKEN && req.player_id) {
+    const txLink = `https://bscscan.com/tx/${txHash}`;
+    const text = `🎉 *USDT Withdrawal Sent!*
+
+Your withdrawal request has been successfully processed!
+
+• *Amount:* *$${Number(req.amount_usdt).toFixed(2)} USDT*
+• *Network:* ${req.network} (BNB Smart Chain)
+• *Destination Wallet:*
+\`${req.wallet_address}\`
+
+🔗 *Transaction Hash:*
+\`${txHash}\`
+[View on BscScan](${txLink})
+
+Funds have been transferred to your wallet on the blockchain. Thank you for playing Merge Streak Arcade!`;
+
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: req.player_id,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: false
+      })
+    }).catch(err => console.warn('Failed to notify player of withdrawal completion:', err));
+  }
+
+  return {
+    id: reqId,
+    playerId: req.player_id,
+    amountUsdt: req.amount_usdt,
+    network: req.network,
+    walletAddress: req.wallet_address,
+    status: 'completed',
+    txHash,
+    processedAt: stamp
+  };
+}
+
+async function executePayoutReject(env, reqId, reason = 'Administrative rejection') {
+  if (!env.DB) throw new Error('Database unavailable');
+  const req = await env.DB.prepare(
+    'SELECT id, player_id, amount_usdt, network, wallet_address, status FROM withdrawal_requests WHERE id=?'
+  ).bind(reqId).first();
+
+  if (!req) throw new Error(`Withdrawal request ${reqId} not found`);
+  if (req.status !== 'pending') throw new Error(`Request is already ${req.status}`);
+
+  const stamp = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE withdrawal_requests SET status="rejected", rejection_reason=?, processed_at=? WHERE id=?'
+    ).bind(reason, stamp, reqId),
+    env.DB.prepare(
+      'UPDATE players SET usdt_balance = usdt_balance + ? WHERE id=?'
+    ).bind(req.amount_usdt, req.player_id)
+  ]);
+
+  if (env.BOT_TOKEN && req.player_id) {
+    const text = `⚠️ *Withdrawal Update*
+
+Your withdrawal request for *$${Number(req.amount_usdt).toFixed(2)} USDT* could not be processed.
+
+• *Reason:* ${reason}
+• *Action:* *$${Number(req.amount_usdt).toFixed(2)} USDT* has been returned to your in-game balance.
+
+You can verify your wallet address and try submitting a new request in your Profile.`;
+
+    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: req.player_id,
+        text,
+        parse_mode: 'Markdown'
+      })
+    }).catch(err => console.warn('Failed to notify player of withdrawal rejection:', err));
+  }
+
+  return {
+    id: reqId,
+    playerId: req.player_id,
+    amountUsdt: req.amount_usdt,
+    status: 'rejected',
+    rejectionReason: reason,
+    processedAt: stamp
+  };
+}
+
 async function userProfile(env, uid) {
   const [player, themed, active, days, recent, daily, isAdmin] = await Promise.all([
     env.DB.prepare(`SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile,
@@ -186,7 +407,7 @@ async function handleTelegramWebhook(request, env) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${firstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full settlement authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
+          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${firstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
           parse_mode: 'Markdown'
         })
       });
@@ -213,7 +434,7 @@ async function handleTelegramWebhook(request, env) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `👑 *Admin Rights Granted!*\n\nYou are now confirmed as the platform administrator.\n\n🛠 *Available Commands:*\n• \`/settle <revenue_usdt>\` - Settle week with total ad revenue\n• \`/settle_rate <rate_per_star>\` - Settle with exact USDT per Star\n• \`/settle_preview\` - Check current stars and pool size`,
+            text: `👑 *Admin Rights Granted!*\n\nYou are now confirmed as the platform administrator.\n\n🛠 *Available Commands:*\n• \`/settle <revenue_usdt>\` - Settle week with total ad revenue\n• \`/settle_rate <rate_per_star>\` - Settle with exact USDT per Star\n• \`/settle_preview\` - Check current stars and pool size\n• \`/payouts\` - Check pending withdrawal requests\n• \`/payout_complete <id> <tx_hash>\` - Confirm manual transfer\n• \`/payout_reject <id> <reason>\` - Reject & refund to user\n• \`/set_email <email>\` - Set alert email for new requests`,
             parse_mode: 'Markdown'
           })
         });
@@ -321,6 +542,142 @@ async function handleTelegramWebhook(request, env) {
         body: JSON.stringify({
           chat_id: chatId,
           text: `🎉 *Confirmed! Stars Converted into USDT!*\n\n• *Round:* ${weekId}\n• *Total Stars Converted:* ${totalStars} ⭐\n• *Conversion Ratio:* 1 ⭐ = *\$${valuePerStar.toFixed(4)} USDT*\n• *Total Community Pool:* \$${communityPool.toFixed(2)} USDT\n\n✅ All players with weekly stars have been credited with withdrawable USDT!`,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
+
+    // 5. /payouts command
+    if (text === '/payouts') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const pending = await env.DB.prepare(
+        'SELECT w.id, w.amount_usdt, w.network, w.wallet_address, w.requested_at, p.display_name, p.username FROM withdrawal_requests w LEFT JOIN players p ON w.player_id = p.id WHERE w.status = "pending" ORDER BY w.requested_at ASC LIMIT 10'
+      ).all();
+      const list = pending.results || [];
+      if (list.length === 0) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `✅ No pending withdrawal requests! All payouts are settled.` })
+        });
+        return json({ ok: true });
+      }
+      let msg = `📋 *Pending Withdrawal Requests (${list.length}):*\n\n`;
+      for (const item of list) {
+        const uName = item.display_name || 'Player';
+        const uHandle = item.username ? ` (@${item.username})` : '';
+        msg += `• *ID:* \`${item.id}\`\n  *User:* ${uName}${uHandle}\n  *Amount:* \$${Number(item.amount_usdt).toFixed(2)} USDT (${item.network})\n  *Wallet:* \`${item.wallet_address}\`\n\n`;
+      }
+      msg += `👉 *To confirm manual payout:*\n\`/payout_complete <id> <tx_hash>\`\n\n👉 *To reject & refund:*\n\`/payout_reject <id> <reason>\``;
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
+      });
+      return json({ ok: true });
+    }
+
+    // 6. /payout_complete <id> <tx_hash>
+    const completeMatch = text.match(/^\/payout_complete\s+(\S+)\s+(\S+)$/);
+    if (completeMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const reqId = completeMatch[1];
+      const txHash = completeMatch[2];
+      try {
+        const res = await executePayoutComplete(env, reqId, txHash);
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `✅ *Payout Confirmed & Completed!*\n\n• *ID:* \`${reqId}\`\n• *Amount:* \$${Number(res.amountUsdt).toFixed(2)} USDT\n• *TX Hash:* \`${txHash}\`\n\nPlayer has been notified with the BscScan transaction link.`,
+            parse_mode: 'Markdown'
+          })
+        });
+      } catch (err) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `❌ Failed: ${err.message}` })
+        });
+      }
+      return json({ ok: true });
+    }
+
+    // 7. /payout_reject <id> <reason>
+    const rejectMatch = text.match(/^\/payout_reject\s+(\S+)(?:\s+(.+))?$/);
+    if (rejectMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const reqId = rejectMatch[1];
+      const reason = rejectMatch[2] || 'Administrative rejection';
+      try {
+        const res = await executePayoutReject(env, reqId, reason);
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `⚠️ *Withdrawal Rejected & Refunded!*\n\n• *ID:* \`${reqId}\`\n• *Refunded:* \$${Number(res.amountUsdt).toFixed(2)} USDT returned to user balance.\n• *Reason:* ${reason}\n\nPlayer has been notified.`,
+            parse_mode: 'Markdown'
+          })
+        });
+      } catch (err) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `❌ Failed: ${err.message}` })
+        });
+      }
+      return json({ ok: true });
+    }
+
+    // 8. /set_email <email>
+    const emailMatch = text.match(/^\/set_email\s+([^\s@]+@[^\s@]+\.[^\s@]+)$/i);
+    if (emailMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const email = emailMatch[1].toLowerCase().trim();
+      await env.DB.prepare(
+        'INSERT INTO system_settings (key, value, updated_at) VALUES ("admin_email", ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at'
+      ).bind(email, now()).run();
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `✅ *Notification Email Updated!*\n\nNew withdrawal request alerts will be delivered to:\n\`${email}\``,
           parse_mode: 'Markdown'
         })
       });
@@ -623,8 +980,8 @@ async function route(request, env) {
         return fail(400, 'Insufficient USDT balance');
       }
 
-      const reqId = crypto.randomUUID();
       const stamp = now();
+      const reqId = `wd_${stamp}_${crypto.randomUUID().slice(0, 8)}`;
 
       await env.DB.batch([
         env.DB.prepare(
@@ -636,6 +993,11 @@ async function route(request, env) {
       ]);
 
       const updated = await env.DB.prepare('SELECT usdt_balance FROM players WHERE id=?').bind(uid).first();
+
+      // Dispatch admin email and Telegram notifications
+      sendAdminEmailNotification(env, { id: reqId, amount, network, address, player, requestedAt: stamp }).catch(() => {});
+      sendAdminTelegramWithdrawalNotification(env, { id: reqId, amount, network, address, player, requestedAt: stamp }).catch(() => {});
+
       return json({
         ok: true,
         requestId: reqId,
@@ -643,8 +1005,85 @@ async function route(request, env) {
         network,
         address,
         remainingBalance: updated.usdt_balance,
-        status: 'pending'
+        status: 'pending',
+        message: 'Withdrawal request submitted! Status: Pending manual transfer.'
       });
+    }
+
+    if (method === 'GET' && path === '/api/wallet/history') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const rows = await env.DB.prepare(`
+        SELECT id, amount_usdt AS amount, network, wallet_address AS address, status,
+               requested_at AS requestedAt, processed_at AS processedAt, tx_hash AS txHash,
+               rejection_reason AS rejectionReason
+        FROM withdrawal_requests
+        WHERE player_id = ?
+        ORDER BY requested_at DESC
+        LIMIT 50
+      `).bind(uid).all();
+      return json({ ok: true, requests: rows.results || [] });
+    }
+
+    if (method === 'GET' && path === '/api/admin/withdrawals') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const url = new URL(request.url);
+      const statusFilter = url.searchParams.get('status') || 'pending';
+      let query = `
+        SELECT w.id, w.player_id AS playerId, w.amount_usdt AS amount, w.network,
+               w.wallet_address AS address, w.status, w.requested_at AS requestedAt,
+               w.processed_at AS processedAt, w.tx_hash AS txHash, w.rejection_reason AS rejectionReason,
+               p.display_name AS playerName, p.username AS playerUsername
+        FROM withdrawal_requests w
+        LEFT JOIN players p ON w.player_id = p.id
+      `;
+      if (statusFilter !== 'all') {
+        query += ' WHERE w.status = ? ORDER BY w.requested_at ASC LIMIT 100';
+        const res = await env.DB.prepare(query).bind(statusFilter).all();
+        return json({ ok: true, requests: res.results || [] });
+      } else {
+        query += ' ORDER BY w.requested_at DESC LIMIT 100';
+        const res = await env.DB.prepare(query).all();
+        return json({ ok: true, requests: res.results || [] });
+      }
+    }
+
+    if (method === 'POST' && path === '/api/admin/withdrawal/complete') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const body = await bodyJSON(request);
+      if (!body.requestId) return fail(400, 'Missing requestId');
+      if (!body.txHash) return fail(400, 'Missing txHash');
+
+      try {
+        const result = await executePayoutComplete(env, body.requestId, body.txHash, body.adminNote);
+        return json({ ok: true, ...result });
+      } catch (err) {
+        return fail(400, err.message);
+      }
+    }
+
+    if (method === 'POST' && path === '/api/admin/withdrawal/reject') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const body = await bodyJSON(request);
+      if (!body.requestId) return fail(400, 'Missing requestId');
+
+      try {
+        const result = await executePayoutReject(env, body.requestId, body.reason || 'Administrative rejection');
+        return json({ ok: true, ...result });
+      } catch (err) {
+        return fail(400, err.message);
+      }
     }
 
     if (method === 'GET' && path === '/api/admin/pool-summary') {

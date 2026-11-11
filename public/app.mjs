@@ -248,6 +248,7 @@ function renderProfilePage() {
   const achieved = earnedBadges(player).filter(b => b.unlocked);
   if (!achieved.length) $('profile-badges').append(el('p', 'muted-paragraph', 'Your first badge unlocks after saving a run.'));
   for (const badge of achieved) $('profile-badges').append(el('span', '', `${badge.mark} ${badge.title}`));
+  refreshUserWithdrawals();
 }
 
 function renderDashboard() {
@@ -1861,6 +1862,83 @@ async function claimAdReward() {
   }
 }
 
+let userWithdrawals = [];
+
+function renderUserWithdrawals() {
+  const container = $('user-withdrawals-list');
+  if (!container) return;
+  clear(container);
+
+  if (!userWithdrawals || userWithdrawals.length === 0) {
+    container.append(el('div', 'empty-state', 'No withdrawal requests yet. Payouts and blockchain transaction hashes will appear here.'));
+    return;
+  }
+
+  for (const item of userWithdrawals) {
+    const card = el('div', `withdrawal-card status-${item.status || 'pending'}`);
+    
+    // Top row: Amount + Status badge
+    const topRow = el('div', 'withdrawal-card-top');
+    const amountText = item.status === 'rejected'
+      ? `+$${Number(item.amount).toFixed(2)} USDT (Refunded)`
+      : `-$${Number(item.amount).toFixed(2)} USDT`;
+    const amtEl = el('span', 'withdrawal-card-amount', amountText);
+    
+    let badgeText = '⏳ PENDING MANUAL REVIEW';
+    if (item.status === 'completed') badgeText = '✅ COMPLETED';
+    else if (item.status === 'rejected') badgeText = '❌ REJECTED';
+    const badgeEl = el('span', `withdrawal-status-badge ${item.status || 'pending'}`, badgeText);
+    topRow.append(amtEl, badgeEl);
+
+    // Details: Address + Network
+    const details = el('div', 'withdrawal-card-details');
+    const addrRow = el('div');
+    const shortAddr = item.address ? `${item.address.slice(0, 10)}...${item.address.slice(-8)}` : 'BEP-20 Wallet';
+    addrRow.innerHTML = `<span>Network: <b>${item.network || 'BEP-20'}</b> · To: <code>${shortAddr}</code></span>`;
+    details.append(addrRow);
+
+    // Meta row: Date + BscScan link if completed
+    const metaRow = el('div', 'withdrawal-card-meta');
+    const dateStr = item.requestedAt ? new Date(item.requestedAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Recently';
+    metaRow.append(el('span', '', `${dateStr} UTC`));
+
+    if (item.status === 'completed' && item.txHash) {
+      const bscLink = el('a', 'bsc-link', 'View on BscScan ↗');
+      bscLink.href = `https://bscscan.com/tx/${item.txHash}`;
+      bscLink.target = '_blank';
+      bscLink.rel = 'noopener';
+      metaRow.append(bscLink);
+    }
+    details.append(metaRow);
+
+    // Contextual status note
+    if (item.status === 'pending') {
+      const note = el('div', 'withdrawal-pending-note', 'ℹ️ Manual transfer in progress. We verify and send USDT on BEP-20. You will receive a Telegram message once confirmed.');
+      details.append(note);
+    } else if (item.status === 'rejected' && item.rejectionReason) {
+      const reasonEl = el('div', 'withdrawal-reason-text', `Reason: ${item.rejectionReason}`);
+      details.append(reasonEl);
+    }
+
+    card.append(topRow, details);
+    container.append(card);
+  }
+}
+
+async function refreshUserWithdrawals() {
+  if (online) {
+    try {
+      const res = await api('/wallet/history');
+      userWithdrawals = res.requests || [];
+    } catch (err) {
+      console.warn('Failed to load withdrawal history:', err);
+    }
+  } else {
+    userWithdrawals = read('ms_demo_withdrawals', []);
+  }
+  renderUserWithdrawals();
+}
+
 async function submitWithdrawal() {
   const network = $('wallet-network-select')?.value || 'BEP-20';
   const address = ($('wallet-address-input')?.value || '').trim();
@@ -1914,20 +1992,35 @@ async function submitWithdrawal() {
       player.payoutWallet = address;
       player.hasWithdrawn = true;
       player.canWithdraw = true;
+      await refreshUserWithdrawals();
     } else {
       player.usdtBalance = Math.max(0, (player.usdtBalance || 0) - amount);
       player.payoutWallet = address;
       player.hasWithdrawn = true;
       player.canWithdraw = true;
+      const guestWd = {
+        id: `wd_guest_${stamp()}`,
+        amount,
+        network,
+        address,
+        status: 'pending',
+        requestedAt: stamp(),
+        processedAt: null,
+        txHash: null,
+        rejectionReason: null
+      };
+      userWithdrawals = [guestWd, ...read('ms_demo_withdrawals', [])];
+      write('ms_demo_withdrawals', userWithdrawals);
       storeGuest();
+      renderUserWithdrawals();
     }
 
     if (statusMsg) {
       statusMsg.hidden = false;
       statusMsg.className = 'pool-status-msg success';
-      statusMsg.textContent = `✓ Payout request of $${amount.toFixed(2)} USDT submitted! Sent to ${address.slice(0, 8)}... (${network})`;
+      statusMsg.textContent = `⏳ Payout request of $${amount.toFixed(2)} USDT received! Status: Pending manual review. You will receive a Telegram message once the BEP-20 transfer completes.`;
     }
-    toast(`✓ Withdrawal request for $${amount.toFixed(2)} USDT received!`);
+    toast(`⏳ Withdrawal request for $${amount.toFixed(2)} USDT received! Status: Pending manual transfer.`);
     if ($('wallet-amount-input')) $('wallet-amount-input').value = '';
 
     refreshPoolData();
@@ -2225,6 +2318,7 @@ $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
 $('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
+$('refresh-withdrawals-btn')?.addEventListener('click', refreshUserWithdrawals);
 
 // Referral Link Share & Copy Listeners
 $('copy-ref-link-btn')?.addEventListener('click', () => {

@@ -578,3 +578,138 @@ test('handleScheduled acts strictly as reminder and NEVER auto-settles without c
   // Verify that batch settlement did NOT run:
   assert.equal(batchRan, false);
 });
+
+test('GET /api/wallet/history returns user withdrawal requests', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async all() {
+              return {
+                results: [
+                  {
+                    id: 'wd_12345',
+                    amount: 15.00,
+                    network: 'BEP-20',
+                    address: '0x1234567890123456789012345678901234567890',
+                    status: 'pending',
+                    requestedAt: 1731326400,
+                    processedAt: null,
+                    txHash: null,
+                    rejectionReason: null
+                  }
+                ]
+              };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/wallet/history', {
+    headers: auth
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.requests.length, 1);
+  assert.equal(data.requests[0].id, 'wd_12345');
+  assert.equal(data.requests[0].status, 'pending');
+});
+
+test('POST /api/admin/withdrawal/complete updates status and txHash', async () => {
+  const auth = await authHeader('9999');
+  let updateRan = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM withdrawal_requests WHERE id=?')) {
+                return {
+                  id: 'wd_123',
+                  player_id: 'player1',
+                  amount_usdt: 20.0,
+                  network: 'BEP-20',
+                  wallet_address: '0x1234567890123456789012345678901234567890',
+                  status: 'pending'
+                };
+              }
+              return null;
+            },
+            async run() {
+              if (query.includes('UPDATE withdrawal_requests SET status="completed"')) {
+                updateRan = true;
+              }
+              return { success: true };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/withdrawal/complete', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ requestId: 'wd_123', txHash: '0xabcdef1234567890' })
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.status, 'completed');
+  assert.equal(data.txHash, '0xabcdef1234567890');
+  assert(updateRan);
+});
+
+test('POST /api/admin/withdrawal/reject refunds user balance', async () => {
+  const auth = await authHeader('9999');
+  let batchRan = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM withdrawal_requests WHERE id=?')) {
+                return {
+                  id: 'wd_456',
+                  player_id: 'player1',
+                  amount_usdt: 12.0,
+                  network: 'BEP-20',
+                  wallet_address: '0x1234567890123456789012345678901234567890',
+                  status: 'pending'
+                };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchRan = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/withdrawal/reject', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ requestId: 'wd_456', reason: 'Invalid address' })
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.status, 'rejected');
+  assert.equal(data.rejectionReason, 'Invalid address');
+  assert(batchRan);
+});
