@@ -1620,7 +1620,8 @@ const SPONSORS = [
   { network: 'litebits', icon: '💠', title: 'LiteBits Ads', tag: 'LITEBITS NETWORK', desc: 'Fast, lightweight rewarded ad inventory optimized for instant-play casual mobile games.' },
   { network: 'adskinz', icon: '🎮', title: 'AdsKinz Gaming', tag: 'ADSKINZ GAMIFIED', desc: 'Gamified immersive brand showcases turning video views into immediate community stars.' },
   { network: 'openad', icon: '🔓', title: 'OpenAD Protocol', tag: 'OPENAD PROTOCOL', desc: 'Community-governed open advertising standard ensuring fair 50/50 revenue distribution.' },
-  { network: 'adsterra', icon: '⭐', title: 'Adsterra Network', tag: 'ADSTERRA VERIFIED', desc: 'World-renowned ad network delivering high-converting video and direct link sponsorships.' }
+  { network: 'adsterra', icon: '⭐', title: 'Adsterra Network', tag: 'ADSTERRA VERIFIED', desc: 'World-renowned ad network delivering high-converting video and direct link sponsorships.' },
+  { network: 'taskkit', icon: '💼', title: 'TaskKit IO (@taskkitio_bot)', tag: 'OFFICIAL SISTER PROJECT', desc: 'Complete quick microtasks, follow sponsors, test apps, and earn direct money alongside your Merge Streak rewards.', url: 'https://t.me/taskkitio_bot' }
 ];
 
 let currentAdNetwork = 'adsgram';
@@ -1838,6 +1839,23 @@ function showcaseAdPlayer() {
   $('ad-showcase-desc').textContent = sponsor.desc;
   const tagEl = document.querySelector('.ad-sponsor-badge');
   if (tagEl) tagEl.innerHTML = `<span class="status-pulse"></span> ${sponsor.tag || 'SPONSOR SHOWCASE'}`;
+
+  const ctaBtn = $('ad-showcase-cta');
+  if (ctaBtn) {
+    if (sponsor.url) {
+      ctaBtn.href = sponsor.url;
+      ctaBtn.textContent = `Launch ${sponsor.title} ↗`;
+      ctaBtn.style.display = 'inline-flex';
+      ctaBtn.onclick = (e) => {
+        if (tg?.openTelegramLink && sponsor.url.startsWith('https://t.me/')) {
+          e.preventDefault();
+          tg.openTelegramLink(sponsor.url);
+        }
+      };
+    } else {
+      ctaBtn.style.display = 'none';
+    }
+  }
 
   adWatchRemaining = 15;
   $('ad-timer-badge').textContent = '15s';
@@ -2393,6 +2411,22 @@ $('copy-ref-link-btn')?.addEventListener('click', () => {
     toast('📋 Referral link copied!');
   });
 });
+
+// TaskKit IO Sister Bot Launchers
+function openTaskKitBot(e) {
+  if (e) e.preventDefault();
+  const botUrl = 'https://t.me/taskkitio_bot';
+  try {
+    if (tg?.openTelegramLink) tg.openTelegramLink(botUrl);
+    else window.open(botUrl, '_blank');
+  } catch {
+    window.open(botUrl, '_blank');
+  }
+}
+$('home-taskkit-btn')?.addEventListener('click', openTaskKitBot);
+$('pool-taskkit-btn')?.addEventListener('click', openTaskKitBot);
+$('profile-taskkit-btn')?.addEventListener('click', openTaskKitBot);
+$('discovery-taskkit-link')?.addEventListener('click', openTaskKitBot);
 
 $('share-ref-link-btn')?.addEventListener('click', () => {
   const input = $('profile-ref-link-input');

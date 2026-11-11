@@ -139,12 +139,29 @@
             <section class="surface daily-feature"><div class="surface-head"><span class="mini-label">⚡ TODAY'S CHALLENGE</span><span class="soft-chip" id="daily-home-tag">NOT STARTED</span></div><h3>One board.<br/>One chance today.</h3><p>Everyone with a Telegram account gets the same seeded puzzle for the UTC day. Save your run to join today's rankings.</p><div class="daily-feature-foot"><button class="btn btn-primary" data-launch-mode="daily" id="daily-home-btn">Play daily puzzle <span>↗</span></button><span id="daily-day-label">Resets at 00:00 UTC</span></div></section>
             <section class="surface activity-feature"><div class="surface-head"><span class="mini-label">◈ YOUR RECENT RUNS</span><button class="text-action" data-view-target="profile">View profile ↗</button></div><div id="home-recent" class="recent-list"><div class="empty-state">Finish a game to start your journey.</div></div></section>
           </div>
+
+          <!-- SISTER PROJECT: TASKKIT IO -->
+          <div class="partner-feature-banner">
+            <div class="partner-feature-content">
+              <div class="partner-feature-icon">💼</div>
+              <div class="partner-feature-text">
+                <span class="partner-feature-badge"><span class="status-pulse"></span> SISTER PROJECT · DIRECT CASH EARNINGS</span>
+                <h3>Earn Money with TaskKit IO (@taskkitio_bot)</h3>
+                <p>Complete fast online microtasks, follow sponsors, and test apps to earn real cash and crypto alongside your arcade rewards!</p>
+              </div>
+            </div>
+            <a href="https://t.me/taskkitio_bot" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm partner-launch-btn" id="home-taskkit-btn">
+              Launch @taskkitio_bot ↗
+            </a>
+          </div>
+
           <div class="section-head"><div><span class="mini-label">MORE TO EXPLORE</span><h2>Beyond the board</h2></div></div>
           <div class="discovery-grid">
             <button class="discovery-card" data-view-target="pool"><span class="discovery-symbol golden">⭐</span><span><strong>Weekly Pool</strong><small>Earn 50% ad revenue share</small></span><b>↗</b></button>
             <button class="discovery-card" data-view-target="rankings"><span class="discovery-symbol lavender">♛</span><span><strong>Hall of fame</strong><small>Challenge the top scores</small></span><b>↗</b></button>
             <button class="discovery-card" data-view-target="shop"><span class="discovery-symbol golden">✦</span><span><strong>Theme shop</strong><small>Spend your virtual coins</small></span><b>↗</b></button>
             <button class="discovery-card" data-view-target="challenges"><span class="discovery-symbol aqua">⚡</span><span><strong>Achievements</strong><small>Collect meaningful milestones</small></span><b>↗</b></button>
+            <a class="discovery-card" href="https://t.me/taskkitio_bot" target="_blank" rel="noopener noreferrer" id="discovery-taskkit-link"><span class="discovery-symbol aqua">💼</span><span><strong>TaskKit IO</strong><small>Microtasks & money</small></span><b>↗</b></a>
           </div>
         </section>
 
@@ -375,6 +392,16 @@
               </div>
               <button type="button" class="btn btn-outline btn-sm" data-view-target="profile">Go to Profile Cashout ↗</button>
             </div>
+
+            <!-- TASKKIT SISTER PROJECT BANNER IN POOL -->
+            <div class="pool-taskkit-banner">
+              <div class="pool-taskkit-content">
+                <span class="arena-sponsor-badge">⚡ MULTIPLY YOUR EARNINGS</span>
+                <strong>Want to earn more while waiting for cooldown?</strong>
+                <p>Complete fast online microtasks on our sister bot <b>@taskkitio_bot</b> to earn direct cash & crypto payouts.</p>
+              </div>
+              <a href="https://t.me/taskkitio_bot" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" id="pool-taskkit-btn">Launch @taskkitio_bot ↗</a>
+            </div>
           </section>
 
           <div class="section-head">
@@ -448,8 +475,21 @@
             <div><span>WITHDRAWABLE USDT</span><strong id="profile-total-earned" style="color: #50e3c2;">$0.00</strong></div>
           </div>
 
+          <!-- TASKKIT SISTER PROJECT IN PROFILE -->
+          <div class="profile-partner-callout" style="margin-top: 24px;">
+            <div class="profile-partner-content">
+              <div class="profile-partner-icon">💼</div>
+              <div class="profile-partner-text">
+                <span class="arena-sponsor-badge">SISTER EARNING BOT</span>
+                <strong>Earn extra cash on TaskKit IO (@taskkitio_bot)</strong>
+                <p>Complete simple microtasks and bounties to earn real crypto and cash alongside your Merge Streak USDT pool!</p>
+              </div>
+            </div>
+            <a href="https://t.me/taskkitio_bot" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-xs" id="profile-taskkit-btn">Open Bot ↗</a>
+          </div>
+
           <!-- REFERRAL UNLOCK & INVITE CARD -->
-          <div class="section-head" style="margin-top: 26px;">
+          <div class="section-head" style="margin-top: 22px;">
             <div>
               <span class="mini-label">👥 10 REFERRALS REQUIRED FOR 1ST WITHDRAWAL</span>
               <h2>Referral Unlock Status</h2>
@@ -600,6 +640,7 @@
           <span>● Verified Sponsor</span>
           <span>● 15s Rewarded Ad</span>
         </div>
+        <a id="ad-showcase-cta" class="ad-showcase-cta" href="https://t.me/taskkitio_bot" target="_blank" rel="noopener noreferrer" style="display: none;">Open Sponsor ↗</a>
       </div>
       <div class="ad-progress-wrap">
         <div class="ad-progress-bar" id="ad-progress-bar" style="width: 0%"></div>

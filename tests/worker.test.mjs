@@ -797,5 +797,16 @@ test('GET /api/admin/ads-summary returns network breakdown', async () => {
   assert(data.supportedNetworks.includes('monetag'));
   assert(data.supportedNetworks.includes('adsgram'));
   assert(data.supportedNetworks.includes('adsterra'));
+  assert(data.supportedNetworks.includes('taskkit'));
   assert.equal(data.networkBreakdown.length, 2);
+});
+
+test('webhook endpoint responds to /taskkit and /earn commands', async () => {
+  const response = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ update_id: 2, message: { chat: { id: 101 }, text: '/taskkit' } })
+  }), { BOT_TOKEN: 'fake_bot_token' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
 });

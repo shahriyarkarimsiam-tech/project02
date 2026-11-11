@@ -684,12 +684,36 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
+    // 9. /taskkit or /earn or /tasks command
+    if (text === '/taskkit' || text === '/earn' || text === '/tasks') {
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `💼 *TaskKit IO (@taskkitio_bot) — Official Sister Earning Project*\n\nWant to earn even more money alongside Merge Streak?\n\n*TaskKit* is our dedicated microtask platform where you get paid for quick online actions:\n• 📝 Complete fast social & engagement microtasks\n• 📱 Test new apps and visit verified Web3 sponsors\n• 💵 Earn real cash & crypto rewards\n• ⚡ 100% free to join and start earning today!\n\n👇 *Tap below to launch TaskKit and boost your daily income:*`,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '💼 Launch TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
+              ],
+              [
+                { text: '🎮 Play Merge Streak Arcade', web_app: { url: appUrl } }
+              ]
+            ]
+          }
+        })
+      });
+      return json({ ok: true });
+    }
+
     await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n👇 Tap below to start playing:`,
+        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 *Earn More With TaskKit (@taskkitio_bot):*\nComplete microtasks & bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
@@ -710,6 +734,9 @@ async function handleTelegramWebhook(request, env) {
             ],
             [
               { text: '⭐ Weekly Revenue Pool', web_app: { url: `${appUrl}?view=pool` } }
+            ],
+            [
+              { text: '💼 Earn on TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
             ]
           ]
         }
@@ -735,7 +762,8 @@ const SUPPORTED_AD_NETWORKS = [
   'litebits',
   'adskinz',
   'openad',
-  'adsterra'
+  'adsterra',
+  'taskkit'
 ];
 
 async function handleAdPostback(request, env) {
