@@ -2110,6 +2110,74 @@ async function playTadsAd() {
   });
 }
 
+let adexiumWidget = null;
+
+function initAdexiumSDK() {
+  const wid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
+  if (window.AdexiumWidget && !adexiumWidget) {
+    try {
+      adexiumWidget = new window.AdexiumWidget({
+        wid,
+        adFormat: 'interstitial'
+      });
+      adexiumWidget.on('adDisplayed', () => {
+        currentAdNetwork = 'adexium';
+        claimAdReward();
+      });
+      adexiumWidget.on('adClosed', () => {
+        currentAdNetwork = 'adexium';
+        claimAdReward();
+      });
+      adexiumWidget.autoMode();
+      console.log('[Adexium] Widget initialized and autoMode active (WID: ' + wid + ')');
+    } catch (e) {
+      console.warn('[Adexium] init note:', e);
+    }
+  }
+}
+
+async function playAdexiumAd() {
+  const wid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
+  toast('Loading sponsor ad from Adexium...');
+  return new Promise(async (resolve, reject) => {
+    if (!window.AdexiumWidget) {
+      return reject(new Error('Adexium SDK not available'));
+    }
+    try {
+      if (!adexiumWidget) {
+        initAdexiumSDK();
+      }
+      if (!adexiumWidget) {
+        return reject(new Error('Adexium instance not ready'));
+      }
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('Adexium ad load timeout'));
+        }
+      }, 8000);
+
+      const ads = await adexiumWidget.requestRewardedAd('interstitial').catch(() => null);
+      if (Array.isArray(ads) && ads.length > 0) {
+        clearTimeout(timer);
+        resolved = true;
+        adexiumWidget.displayAd(ads, 'interstitial');
+        currentAdNetwork = 'adexium';
+        await claimAdReward();
+        resolve(true);
+      } else {
+        clearTimeout(timer);
+        resolved = true;
+        reject(new Error('No ad returned from Adexium'));
+      }
+    } catch (err) {
+      console.warn('[Adexium] presentation error:', err);
+      reject(err);
+    }
+  });
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -2382,11 +2450,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 6. Fallback verified ad partners
+  // 6. Senary: Adexium Telegram Mini App SDK (WID: 4672c32d-e0b9-41f8-976d-c7ccc51ac091)
+  const adexiumWid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
+  if (adexiumWid) {
+    try {
+      await playAdexiumAd();
+      return;
+    } catch (adexiumErr) {
+      console.warn('Adexium ad presentation failed:', adexiumErr);
+    }
+  }
+
+  // 7. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2818,11 +2897,13 @@ async function boot() {
       window.RICHADS_VAST_URL = health.richadsVastUrl || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
       window.RICHADS_PUB_ID = health.richadsPubId || '1028723';
       window.TADS_WIDGET_ID = health.tadsWidgetId || '13243';
+      window.ADEXIUM_WID = health.adexiumWid || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
       initOnClickASDK();
       initTadsSDK();
+      initAdexiumSDK();
     }
   } catch {}
 
