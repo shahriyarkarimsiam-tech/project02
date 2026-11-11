@@ -66,6 +66,51 @@ async function isAuthorizedAdmin(uid, env) {
   return false;
 }
 
+async function recordReferral(env, referredId, rawRef) {
+  if (!env.DB || !referredId || !rawRef) return;
+  const refClean = String(rawRef).replace(/^ref_/, '').trim();
+  if (!refClean || refClean === String(referredId)) return;
+
+  try {
+    const referrer = await env.DB.prepare('SELECT id FROM players WHERE id=?').bind(refClean).first();
+    if (!referrer) return;
+
+    const existingRef = await env.DB.prepare('SELECT id FROM referrals WHERE referred_id=?').bind(String(referredId)).first();
+    if (existingRef) return;
+
+    const refId = crypto.randomUUID();
+    const stamp = now();
+
+    await env.DB.batch([
+      env.DB.prepare('INSERT OR IGNORE INTO referrals (id, referrer_id, referred_id, created_at) VALUES (?, ?, ?, ?)').bind(refId, refClean, String(referredId), stamp),
+      env.DB.prepare('UPDATE players SET referred_by = ? WHERE id = ? AND referred_by IS NULL').bind(refClean, String(referredId)),
+      env.DB.prepare('UPDATE players SET referrals_count = COALESCE(referrals_count, 0) + 1 WHERE id = ?').bind(refClean)
+    ]);
+
+    if (env.BOT_TOKEN) {
+      const updatedRef = await env.DB.prepare('SELECT referrals_count, has_withdrawn FROM players WHERE id=?').bind(refClean).first();
+      const count = Number(updatedRef?.referrals_count || 0);
+      const unlocked = count >= 10 || Boolean(updatedRef?.has_withdrawn);
+      const remaining = Math.max(0, 10 - count);
+      const statusText = unlocked
+        ? '🎉 *Withdrawal Unlocked for Life!* You have 10+ referrals and can withdraw USDT anytime.'
+        : `👥 You have *${count}/10* referrals. Invite *${remaining}* more friend(s) to unlock your first withdrawal!`;
+
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: refClean,
+          text: `🎉 *New Friend Joined!*\n\nA new player joined via your unique referral link!\n\n${statusText}`,
+          parse_mode: 'Markdown'
+        })
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('Referral recording failed:', err);
+  }
+}
+
 async function userProfile(env, uid) {
   const [player, themed, active, days, recent, daily, isAdmin] = await Promise.all([
     env.DB.prepare(`SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile,
@@ -78,7 +123,10 @@ async function userProfile(env, uid) {
       COALESCE(weekly_stars, 0) AS weeklyStars,
       COALESCE(usdt_balance, 0.0) AS usdtBalance,
       COALESCE(last_ad_at, 0) AS lastAdAt,
-      payout_wallet AS payoutWallet
+      payout_wallet AS payoutWallet,
+      COALESCE(referrals_count, 0) AS referralsCount,
+      COALESCE(has_withdrawn, 0) AS hasWithdrawn,
+      referred_by AS referredBy
       FROM players WHERE id=?`).bind(uid).first(),
     env.DB.prepare('SELECT theme_id AS id FROM player_themes WHERE player_id=?').bind(uid).all(),
     env.DB.prepare('SELECT id, seed, mode, COALESCE(game_type, "merge") AS gameType, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
@@ -88,7 +136,28 @@ async function userProfile(env, uid) {
     isAuthorizedAdmin(uid, env)
   ]);
   if (!player) return null;
-  return { player: { ...player, isAdmin: Boolean(isAdmin), streak: currentStreak((days.results||[]).map(d=>d.day)), ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)] }, activeRuns: active.results||[], recentGames: recent.results||[], daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null } };
+  const refCount = Number(player.referralsCount || 0);
+  const hasWithdrawn = Boolean(player.hasWithdrawn);
+  const canWithdraw = hasWithdrawn || refCount >= 10;
+  const botUsername = 'mergestakeearn_bot';
+  const referralLink = `https://t.me/${botUsername}?start=ref_${uid}`;
+
+  return {
+    player: {
+      ...player,
+      isAdmin: Boolean(isAdmin),
+      streak: currentStreak((days.results||[]).map(d=>d.day)),
+      ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)],
+      referralsCount: refCount,
+      referralsRequired: 10,
+      hasWithdrawn,
+      canWithdraw,
+      referralLink
+    },
+    activeRuns: active.results||[],
+    recentGames: recent.results||[],
+    daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null }
+  };
 }
 
 async function handleTelegramWebhook(request, env) {
@@ -101,6 +170,13 @@ async function handleTelegramWebhook(request, env) {
     const firstName = message.from?.first_name || 'Player';
     const text = String(message.text || '').trim();
     const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
+
+    // Track referral parameter from /start (e.g. /start ref_123456)
+    const startMatch = text.match(/^\/start(?:\s+(.+))?$/);
+    if (startMatch && startMatch[1]) {
+      const refParam = startMatch[1].trim();
+      await recordReferral(env, chatId, refParam);
+    }
 
     // 1. /myid command
     if (text === '/myid') {
@@ -362,6 +438,10 @@ async function route(request, env) {
       ON CONFLICT(id) DO UPDATE SET display_name=excluded.display_name,username=excluded.username,last_seen_at=excluded.last_seen_at`)
       .bind(person.id,safeName(person),person.username,stamp,stamp).run();
     await env.DB.prepare('INSERT OR IGNORE INTO player_days(player_id,day) VALUES (?,?)').bind(person.id,todayUTC()).run();
+    const refParam = person.startParam || input.startParam || input.ref;
+    if (refParam) {
+      await recordReferral(env, person.id, refParam);
+    }
     const signed = await mintSession(person.id, env.SESSION_SECRET);
     return json({ ok:true, token: signed }, 200, { 'set-cookie':sameSiteCookie(signed) });
   }
@@ -529,8 +609,17 @@ async function route(request, env) {
         return fail(400, `Minimum withdrawal amount is $${MIN_WITHDRAWAL_USDT.toFixed(2)} USDT`);
       }
 
-      const player = await env.DB.prepare('SELECT usdt_balance FROM players WHERE id=?').bind(uid).first();
-      if (!player || (player.usdt_balance || 0) < amount) {
+      const player = await env.DB.prepare('SELECT usdt_balance, referrals_count, has_withdrawn FROM players WHERE id=?').bind(uid).first();
+      if (!player) return fail(404, 'Player not found');
+
+      const refCount = Number(player.referrals_count || 0);
+      const hasWithdrawn = Boolean(player.has_withdrawn);
+
+      if (!hasWithdrawn && refCount < 10) {
+        return fail(403, `Withdrawal locked. You need at least 10 users invited under your referral link for your first withdrawal (Current: ${refCount}/10). Share your link in your Profile to unlock!`);
+      }
+
+      if ((player.usdt_balance || 0) < amount) {
         return fail(400, 'Insufficient USDT balance');
       }
 
@@ -539,7 +628,7 @@ async function route(request, env) {
 
       await env.DB.batch([
         env.DB.prepare(
-          'UPDATE players SET usdt_balance = usdt_balance - ?, payout_wallet = ? WHERE id = ?'
+          'UPDATE players SET usdt_balance = usdt_balance - ?, payout_wallet = ?, has_withdrawn = 1 WHERE id = ?'
         ).bind(amount, address, uid),
         env.DB.prepare(
           'INSERT INTO withdrawal_requests (id, player_id, amount_usdt, network, wallet_address, status, requested_at) VALUES (?, ?, ?, ?, ?, "pending", ?)'

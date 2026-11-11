@@ -292,7 +292,7 @@ test('POST /api/wallet/withdraw validates minimum amount and balance', async () 
         bind(...args) {
           return {
             async first() {
-              return { usdt_balance: 10.50 }; // insufficient balance for $15
+              return { usdt_balance: 10.50, referrals_count: 10, has_withdrawn: 0 };
             }
           };
         }
@@ -327,7 +327,34 @@ test('POST /api/wallet/withdraw validates minimum amount and balance', async () 
   assert.equal(err.error, 'Insufficient USDT balance');
 });
 
-test('POST /api/wallet/withdraw processes valid withdrawal request', async () => {
+test('POST /api/wallet/withdraw rejects first withdrawal if user has fewer than 10 referrals', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              return { usdt_balance: 50.00, referrals_count: 7, has_withdrawn: 0 };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 10.00, network: 'BEP-20', address: '0x71C8363837918fb41999e07d72c3dE2C4407D871' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 403);
+  const data = await response.json();
+  assert(data.error.includes('Withdrawal locked. You need at least 10 users invited under your referral link'));
+});
+
+test('POST /api/wallet/withdraw allows withdrawal once user has 10+ referrals or has already completed 1st withdrawal', async () => {
   const auth = await authHeader('1001');
   let batchCalled = false;
   const mockDB = {
@@ -337,7 +364,45 @@ test('POST /api/wallet/withdraw processes valid withdrawal request', async () =>
           return {
             async first() {
               if (query.includes('WHERE id=?')) {
-                return { usdt_balance: 25.00 };
+                // subsequent withdrawal: has_withdrawn is 1 even if current count is under 10
+                return { usdt_balance: 30.00, referrals_count: 5, has_withdrawn: 1 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchCalled = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 10.00, network: 'BEP-20', address: '0x71C8363837918fb41999e07d72c3dE2C4407D871' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert(batchCalled);
+});
+
+test('POST /api/wallet/withdraw processes valid withdrawal request with 10 referrals', async () => {
+  const auth = await authHeader('1001');
+  let batchCalled = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('WHERE id=?')) {
+                return { usdt_balance: 25.00, referrals_count: 10, has_withdrawn: 0 };
               }
               return null;
             }

@@ -12,7 +12,7 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', pool: 'Weekly Pool', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '' });
+const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '', referralsCount: 0, referralsRequired: 10, hasWithdrawn: false, canWithdraw: false, referralLink: 'https://t.me/mergestakeearn_bot?start=ref_demo' });
 
 let player = emptyPlayer(), online = false, view = 'home';
 let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
@@ -169,6 +169,42 @@ function renderProfileBase() {
   if ($('quick-all-val')) $('quick-all-val').textContent = Number(player.usdtBalance || 0).toFixed(2);
   if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
     $('wallet-address-input').value = poolData.payoutWallet || player.payoutWallet;
+  }
+
+  const refCount = Number(player.referralsCount || 0);
+  const hasWithdrawn = Boolean(player.hasWithdrawn);
+  const canWithdraw = hasWithdrawn || refCount >= 10;
+  const refRequired = 10;
+  const refPercent = Math.min(100, Math.round((refCount / refRequired) * 100));
+  const botLink = player.referralLink || (player.id && player.id !== 'demo' ? `https://t.me/mergestakeearn_bot?start=ref_${player.id}` : 'https://t.me/mergestakeearn_bot');
+
+  if ($('profile-ref-count')) $('profile-ref-count').textContent = refCount;
+  if ($('profile-ref-progress-bar')) $('profile-ref-progress-bar').style.width = `${refPercent}%`;
+  if ($('profile-ref-progress-text')) {
+    $('profile-ref-progress-text').textContent = canWithdraw
+      ? (hasWithdrawn ? '✅ Lifetime Unlocked (1st withdrawal verified)' : `🎉 Unlocked (${refCount}/10 referrals reached!)`)
+      : `${refCount} / 10 Friends Invited (${Math.max(0, 10 - refCount)} more needed)`;
+  }
+  if ($('profile-ref-chip')) {
+    $('profile-ref-chip').textContent = canWithdraw ? 'WITHDRAWAL UNLOCKED' : `LOCKED (${refCount}/10)`;
+    $('profile-ref-chip').className = `soft-chip ${canWithdraw ? 'live' : 'locked'}`;
+  }
+  if ($('profile-ref-link-input')) $('profile-ref-link-input').value = botLink;
+
+  const withdrawBtn = $('wallet-withdraw-btn');
+  if (withdrawBtn) {
+    if (!canWithdraw) {
+      withdrawBtn.disabled = true;
+      withdrawBtn.textContent = `🔒 10 Referrals Required (Currently ${refCount}/10)`;
+    } else {
+      withdrawBtn.disabled = false;
+      withdrawBtn.textContent = 'Request USDT Withdrawal ↗';
+    }
+  }
+
+  if ($('profile-ref-lock-notice')) {
+    $('profile-ref-lock-notice').hidden = canWithdraw;
+    $('profile-ref-lock-notice').textContent = `⚠️ Your 1st withdrawal is locked until you have at least 10 users joined under your link (Current: ${refCount}/10). Once completed, you never need referrals again!`;
   }
 
   updateRank();
@@ -1855,6 +1891,13 @@ async function submitWithdrawal() {
     return;
   }
 
+  const refCount = Number(player.referralsCount || 0);
+  const hasWithdrawn = Boolean(player.hasWithdrawn);
+  if (!hasWithdrawn && refCount < 10) {
+    toast(`🔒 Withdrawal locked. You need at least 10 referrals for your 1st withdrawal (Current: ${refCount}/10).`);
+    return;
+  }
+
   const withdrawBtn = $('wallet-withdraw-btn');
   if (withdrawBtn) {
     withdrawBtn.disabled = true;
@@ -1869,9 +1912,13 @@ async function submitWithdrawal() {
       });
       player.usdtBalance = res.remainingBalance;
       player.payoutWallet = address;
+      player.hasWithdrawn = true;
+      player.canWithdraw = true;
     } else {
       player.usdtBalance = Math.max(0, (player.usdtBalance || 0) - amount);
       player.payoutWallet = address;
+      player.hasWithdrawn = true;
+      player.canWithdraw = true;
       storeGuest();
     }
 
@@ -2178,6 +2225,32 @@ $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
 $('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
+
+// Referral Link Share & Copy Listeners
+$('copy-ref-link-btn')?.addEventListener('click', () => {
+  const input = $('profile-ref-link-input');
+  if (!input) return;
+  input.select();
+  navigator.clipboard?.writeText(input.value).then(() => {
+    toast('📋 Referral link copied to clipboard!');
+  }).catch(() => {
+    document.execCommand('copy');
+    toast('📋 Referral link copied!');
+  });
+});
+
+$('share-ref-link-btn')?.addEventListener('click', () => {
+  const input = $('profile-ref-link-input');
+  const link = input?.value || 'https://t.me/mergestakeearn_bot';
+  const text = '🎮 Play Merge Streak Arcade with me! 5 exciting games, earn Stars, and share in 50% weekly ad revenue pool in USDT!';
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+  try {
+    if (tg?.openTelegramLink) tg.openTelegramLink(shareUrl);
+    else window.open(shareUrl, '_blank');
+  } catch {
+    window.open(shareUrl, '_blank');
+  }
+});
 
 // Admin Settlement Console Listeners
 $('open-admin-settle-btn')?.addEventListener('click', openAdminSettleDialog);

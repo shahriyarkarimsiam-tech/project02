@@ -430,8 +430,45 @@
             <div><span>WITHDRAWABLE USDT</span><strong id="profile-total-earned" style="color: #50e3c2;">$0.00</strong></div>
           </div>
 
-          <!-- USDT CASHOUT WALLET & WITHDRAWAL SECTION -->
+          <!-- REFERRAL UNLOCK & INVITE CARD -->
           <div class="section-head" style="margin-top: 26px;">
+            <div>
+              <span class="mini-label">👥 10 REFERRALS REQUIRED FOR 1ST WITHDRAWAL</span>
+              <h2>Referral Unlock Status</h2>
+            </div>
+            <span class="soft-chip locked" id="profile-ref-chip">LOCKED (0/10)</span>
+          </div>
+
+          <section class="surface profile-ref-surface" style="margin-bottom: 20px;">
+            <div class="ref-status-box">
+              <div class="ref-header-row">
+                <div>
+                  <small>YOUR INVITED FRIENDS</small>
+                  <strong><span id="profile-ref-count">0</span> / 10</strong>
+                </div>
+                <span id="profile-ref-progress-text" class="ref-status-note">0 / 10 Friends Invited (10 more needed)</span>
+              </div>
+              <div class="ref-progress-track">
+                <div class="ref-progress-bar" id="profile-ref-progress-bar" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <p style="font-size: 11.5px; color: #8fa5bd; line-height: 1.5; margin: 12px 0 10px;">
+              ✧ <b>Lifetime Unlock Rule:</b> You need a minimum of <b>10 players</b> joined under your link to unlock your <b>1st withdrawal</b>. Once completed, all future withdrawals are permanently unlocked for life!
+            </p>
+
+            <div class="ref-link-box">
+              <label for="profile-ref-link-input" class="pool-label">Your Unique Bot Referral Link</label>
+              <div class="ref-input-group">
+                <input type="text" id="profile-ref-link-input" class="pool-input" readonly value="https://t.me/mergestakeearn_bot" />
+                <button type="button" class="btn btn-outline btn-sm" id="copy-ref-link-btn">📋 Copy</button>
+                <button type="button" class="btn btn-primary btn-sm" id="share-ref-link-btn">🚀 Share</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- USDT CASHOUT WALLET & WITHDRAWAL SECTION -->
+          <div class="section-head">
             <div>
               <span class="mini-label">₮ USDT CASHOUT WALLET</span>
               <h2>Withdraw Your Earnings</h2>
@@ -444,6 +481,10 @@
               <small>TOTAL WITHDRAWABLE USDT EARNINGS</small>
               <strong id="wallet-usdt-balance">$0.00</strong>
               <p>Your verified ad revenue share earnings. Accumulates week after week — withdraw anytime!</p>
+            </div>
+
+            <div id="profile-ref-lock-notice" class="pool-status-msg" style="background:#2d1b10;color:#f8b26a;border:1px solid #6b3e18;margin-bottom:14px;">
+              ⚠️ Your 1st withdrawal is locked until you have at least 10 users joined under your link (Current: 0/10). Once completed, you never need referrals again!
             </div>
 
             <div class="quick-withdraw-row">

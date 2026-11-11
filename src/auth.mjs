@@ -43,7 +43,12 @@ export async function validateTelegramInitData(raw, botToken, nowSeconds = Math.
   try {
     const user = JSON.parse(params.get('user') || 'null');
     if (!user || !Number.isSafeInteger(user.id) || user.id <= 0) return null;
-    return { id: String(user.id), firstName: String(user.first_name || 'Player').slice(0, 40), username: typeof user.username === 'string' ? user.username.slice(0, 32) : null };
+    return {
+      id: String(user.id),
+      firstName: String(user.first_name || 'Player').slice(0, 40),
+      username: typeof user.username === 'string' ? user.username.slice(0, 32) : null,
+      startParam: params.get('start_param') || null
+    };
   } catch { return null; }
 }
 

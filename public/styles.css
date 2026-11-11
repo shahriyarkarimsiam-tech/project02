@@ -259,6 +259,18 @@ body[data-theme='midnight']{--accent:#85caff;--accent-strong:#5bb2eb;--accent-rg
 .admin-checkbox-label{display:flex;align-items:flex-start;gap:10px;font-size:11.5px;color:#9cb2c9;margin:12px 0 16px;cursor:pointer;line-height:1.45}
 .admin-checkbox-label input{margin-top:2px;accent-color:var(--accent)}
 
+/* Referral Card & Progress */
+.profile-ref-surface{background:#111b2b;border:1px solid #273b52;border-radius:18px;padding:20px;margin-bottom:20px}
+.ref-status-box{background:#0e1726;border:1px solid #23374c;border-radius:12px;padding:16px}
+.ref-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.ref-header-row small{display:block;font-size:9px;letter-spacing:1px;font-weight:800;color:#859bb3}
+.ref-header-row strong{display:block;font-size:22px;color:#50e3c2;font-family:Outfit,sans-serif}
+.ref-status-note{font-size:11px;font-weight:700;color:#fed789}
+.ref-progress-track{height:8px;background:#18283c;border-radius:999px;overflow:hidden;border:1px solid #2c425c}
+.ref-progress-bar{height:100%;background:linear-gradient(90deg,var(--accent),#50e3c2);width:0%;transition:width .4s ease}
+.ref-input-group{display:flex;gap:8px;align-items:center;margin-top:6px}
+.soft-chip.locked{background:#3b1e16;color:#fca57c;border:1px solid #753521}
+
 /* Profile Cashout Wallet Surface */
 .profile-wallet-surface{background:#111b2b;border:1px solid #273b52;border-radius:18px;padding:24px;margin-bottom:24px}
 .pool-profile-cashout-banner{background:#111c2a;border:1px solid #23374c;border-radius:12px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:16px}
