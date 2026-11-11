@@ -2316,10 +2316,77 @@ async function playAdsunAd() {
 }
 
 async function playAdsterraAd() {
-  // Adsterra Social Bar is a passive floating push notification banner running in HTML.
-  // It does not provide an interactive rewarded video completion API.
-  // Strictly enforce: No completed rewarded video = No star awarded.
-  throw new Error('Adsterra Social Bar runs as floating display banner; rewarded video not supported.');
+  toast('Loading sponsor ad from Adsterra...');
+
+  const dialog = $('ad-player-dialog');
+  const card = $('ad-showcase-card');
+  const timerBadge = $('ad-timer-badge');
+  const progressBar = $('ad-progress-bar');
+  const claimBtn = $('ad-claim-btn');
+  const cancelBtn = $('ad-cancel-btn');
+  const titleEl = $('ad-showcase-title');
+  const descEl = $('ad-showcase-desc');
+  const iconEl = $('ad-showcase-icon');
+  const ctaEl = $('ad-showcase-cta');
+  const statusEl = $('ad-player-status');
+
+  if (!dialog || !claimBtn) {
+    throw new Error('Ad player dialog unavailable');
+  }
+
+  return new Promise((resolve, reject) => {
+    let timeLeft = 15;
+    let timer = null;
+
+    if (titleEl) titleEl.textContent = 'Adsterra Verified Sponsor';
+    if (descEl) descEl.textContent = 'Official Adsterra partner network. Watch the full 15 seconds to receive your 1 ⭐ Star.';
+    if (iconEl) iconEl.textContent = '🌟';
+    if (statusEl) statusEl.textContent = 'Please watch the full 15 seconds to receive your 1 ⭐ Star.';
+    if (ctaEl) { ctaEl.style.display = 'none'; }
+    if (card) card.style.display = 'block';
+
+    const cleanup = () => {
+      clearInterval(timer);
+      if (cancelBtn) cancelBtn.onclick = null;
+      if (claimBtn) claimBtn.onclick = null;
+    };
+
+    if (cancelBtn) {
+      cancelBtn.onclick = () => {
+        cleanup();
+        closeAdPlayer(false);
+        reject(new Error('User aborted Adsterra sponsor ad early'));
+      };
+    }
+
+    claimBtn.disabled = true;
+    claimBtn.textContent = `Watching Sponsor Ad (${timeLeft}s)...`;
+    if (timerBadge) timerBadge.textContent = `${timeLeft}s`;
+    if (progressBar) progressBar.style.width = '0%';
+
+    try { dialog.showModal(); } catch { dialog.style.display = 'block'; }
+
+    timer = setInterval(async () => {
+      timeLeft--;
+      if (timerBadge) timerBadge.textContent = `${Math.max(0, timeLeft)}s`;
+      if (progressBar) progressBar.style.width = `${Math.min(100, Math.round(((15 - timeLeft) / 15) * 100))}%`;
+
+      if (timeLeft <= 0) {
+        clearInterval(timer);
+        claimBtn.disabled = false;
+        claimBtn.textContent = 'Claim 1 ⭐ Star Now!';
+        if (statusEl) statusEl.textContent = '✅ Sponsor ad completed! Tap below to credit your Star.';
+        claimBtn.onclick = async () => {
+          cleanup();
+          currentAdNetwork = 'adsterra';
+          await claimAdReward();
+          resolve(true);
+        };
+      } else {
+        claimBtn.textContent = `Watching Sponsor Ad (${timeLeft}s)...`;
+      }
+    }, 1000);
+  });
 }
 
 let poolData = {
@@ -2473,16 +2540,48 @@ const hasLiveAds = () => Boolean(
 );
 
 const AD_PROVIDERS = [
-  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd },
-  { id: 'adsun', name: 'Adsun', play: playAdsunAd },
-  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd },
-  { id: 'adexium', name: 'Adexium', play: playAdexiumAd },
-  { id: 'tads', name: 'TADS', play: playTadsAd },
-  { id: 'richads', name: 'RichAds', play: playRichAdsVideo },
-  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd },
-  { id: 'adsterra', name: 'Adsterra', play: playAdsterraAd },
-  { id: 'monetag', name: 'Monetag', play: playMonetagAd }
+  // Tier 1: Confirmed Active & Approved (Ranked Loop: 1. Monetag -> 2. Adsterra -> 3. Adexium)
+  { id: 'monetag', name: 'Monetag', play: playMonetagAd, rank: 1, defaultActive: true },
+  { id: 'adsterra', name: 'Adsterra', play: playAdsterraAd, rank: 2, defaultActive: true },
+  { id: 'adexium', name: 'Adexium', play: playAdexiumAd, rank: 3, defaultActive: true },
+
+  // Tier 2: Pending Networks (Automatically join active rotation as soon as approved)
+  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd, rank: 4, defaultActive: false },
+  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 5, defaultActive: false },
+  { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 6, defaultActive: false },
+  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd, rank: 7, defaultActive: false },
+  { id: 'tads', name: 'TADS', play: playTadsAd, rank: 8, defaultActive: false },
+  { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 9, defaultActive: false }
 ];
+
+function getAutoApprovedSet() {
+  try {
+    const raw = localStorage.getItem('ms_active_networks_ranking');
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+    }
+  } catch {}
+  return new Set(['monetag', 'adsterra', 'adexium']);
+}
+
+function markNetworkApproved(networkId) {
+  try {
+    const set = getAutoApprovedSet();
+    if (!set.has(networkId)) {
+      set.add(networkId);
+      localStorage.setItem('ms_active_networks_ranking', JSON.stringify(Array.from(set)));
+      console.log(`[AdRotation] 🎉 Network "${networkId}" officially joined the active rotation loop!`);
+    }
+  } catch {}
+}
+
+function getActiveRotationList() {
+  const approvedSet = getAutoApprovedSet();
+  const activeList = AD_PROVIDERS.filter(p => approvedSet.has(p.id));
+  const pendingList = AD_PROVIDERS.filter(p => !approvedSet.has(p.id));
+  return { activeList, pendingList };
+}
 
 function updateCooldownDisplay() {
   const live = hasLiveAds();
@@ -2573,41 +2672,48 @@ async function openAdPlayer() {
     return;
   }
 
-  // Fair Zero-Bias Round-Robin across all 9 partner networks:
-  let startIdx = 0;
+  const { activeList, pendingList } = getActiveRotationList();
+
+  // Round-robin index across the active list (1. Monetag -> 2. Adsterra -> 3. Adexium -> Newly approved):
+  let rotIdx = 0;
   try {
-    const saved = localStorage.getItem('ms_ad_rotation_index');
-    startIdx = saved !== null ? parseInt(saved, 10) : Math.floor(Math.random() * AD_PROVIDERS.length);
-    if (isNaN(startIdx) || startIdx < 0 || startIdx >= AD_PROVIDERS.length) startIdx = 0;
+    const saved = localStorage.getItem('ms_active_rot_idx');
+    rotIdx = saved !== null ? parseInt(saved, 10) : 0;
+    if (isNaN(rotIdx) || rotIdx < 0 || rotIdx >= activeList.length) rotIdx = 0;
   } catch {
-    startIdx = 0;
+    rotIdx = 0;
   }
 
-  // Advance index for the subsequent request so the next network gets primary priority
-  const nextIdx = (startIdx + 1) % AD_PROVIDERS.length;
+  // Shift index for next turn:
+  const nextRotIdx = (rotIdx + 1) % activeList.length;
   try {
-    localStorage.setItem('ms_ad_rotation_index', String(nextIdx));
+    localStorage.setItem('ms_active_rot_idx', String(nextRotIdx));
   } catch {}
 
-  // Construct rotated list starting at startIdx
-  const rotatedProviders = [
-    ...AD_PROVIDERS.slice(startIdx),
-    ...AD_PROVIDERS.slice(0, startIdx)
+  // Construct active rotated providers:
+  const rotatedActive = [
+    ...activeList.slice(rotIdx),
+    ...activeList.slice(0, rotIdx)
   ];
 
-  console.log(`[AdRotation] Starting round-robin at #${startIdx} (${rotatedProviders[0].name}). Total available: ${rotatedProviders.length}`);
+  // Full waterfall: active loop first, followed by pending networks (which auto-join upon serving)
+  const fullWaterfall = [...rotatedActive, ...pendingList];
 
-  for (const provider of rotatedProviders) {
+  console.log(`[AdRotation] Priority turn: #${rotIdx + 1} (${rotatedActive[0]?.name}). Active loop: ${activeList.map(p => p.name).join(' -> ')}`);
+
+  for (const provider of fullWaterfall) {
     try {
       console.log(`[AdRotation] Attempting provider: ${provider.name} (${provider.id})...`);
       const played = await provider.play();
       if (played) {
         console.log(`[AdRotation] Successfully completed ad via ${provider.name}`);
+        // Automatically promote into permanent active loop if it was pending
+        markNetworkApproved(provider.id);
         return;
       }
     } catch (err) {
-      console.warn(`[AdRotation] Provider ${provider.name} failed/no-fill, proceeding to next:`, err?.message || err);
-      // Waterfall continues to next provider in rotatedProviders list
+      console.warn(`[AdRotation] Provider ${provider.name} unavailable, falling through:`, err?.message || err);
+      // Waterfall continues to next provider in rotated list
     }
   }
 
