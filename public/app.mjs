@@ -1884,8 +1884,33 @@ async function playOnClickAAd() {
 }
 
 async function playRichAdsVideo() {
+  toast('Loading sponsor ad from RichAds...');
+
+  // Primary: Official RichAds Telegram Mini App SDK Controller
+  if (window.TelegramAdsController) {
+    try {
+      if (typeof window.TelegramAdsController.triggerInterstitialVideo === 'function') {
+        await window.TelegramAdsController.triggerInterstitialVideo();
+        currentAdNetwork = 'richads';
+        await claimAdReward();
+        return true;
+      } else if (typeof window.TelegramAdsController.triggerInterstitialMixed === 'function') {
+        await window.TelegramAdsController.triggerInterstitialMixed();
+        currentAdNetwork = 'richads';
+        await claimAdReward();
+        return true;
+      } else if (typeof window.TelegramAdsController.triggerInterstitialBanner === 'function') {
+        await window.TelegramAdsController.triggerInterstitialBanner();
+        currentAdNetwork = 'richads';
+        await claimAdReward();
+        return true;
+      }
+    } catch (sdkErr) {
+      console.warn('[RichAds SDK] Trigger notice, falling back to VAST:', sdkErr);
+    }
+  }
+
   const vastUrl = window.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
-  toast('Loading sponsor video from RichAds...');
 
   let xmlText = '';
   try {

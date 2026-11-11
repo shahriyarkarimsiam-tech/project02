@@ -171,7 +171,7 @@ async function getActiveAdNetworks(env) {
   if (env.ADSGRAM_BLOCK_ID) active.adsgram = { type: 'sdk', blockId: env.ADSGRAM_BLOCK_ID };
   if (env.MONETAG_ZONE_ID) active.monetag = { type: 'zone', zoneId: env.MONETAG_ZONE_ID };
   if (env.ONCLICKA_SPOT_ID) active.onclicka = { type: 'spot', spotId: env.ONCLICKA_SPOT_ID, adCodeId: env.ONCLICKA_ADCODE_ID || null };
-  if (env.RICHADS_PUB_ID || env.RICHADS_VAST_URL) active.richads = { type: 'vast', pubId: env.RICHADS_PUB_ID || '1028723', siteId: env.RICHADS_SITE_ID || '412421', vastUrl: env.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421' };
+  if (env.RICHADS_PUB_ID || env.RICHADS_APP_ID || env.RICHADS_VAST_URL) active.richads = { type: 'tma_sdk', pubId: env.RICHADS_PUB_ID || '1028723', appId: env.RICHADS_APP_ID || '9621', siteId: env.RICHADS_SITE_ID || '412421', vastUrl: env.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421' };
   if (env.ADS_ACTIVE === 'true') active.direct = { type: 'test' };
 
   if (env.DB) {

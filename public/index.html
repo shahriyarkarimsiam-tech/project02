@@ -14,6 +14,19 @@
   <script src="https://yoszi.com/sdk.js" data-zone="12239871" data-sdk="show_12239871" async></script>
   <!-- OnClickA TMA Rewarded Video SDK (Spot ID: 6155185, AD Code: 472125) -->
   <script src="https://js.onclckvd.com/in-stream-ad-admanager/tma.js" async></script>
+  <!-- RichAds Telegram Mini App Official SDK (Pub ID: 1028723, App ID: 9621) -->
+  <script src="https://richinfo.co/richpartners/telegram/js/tg-ob.js"></script>
+  <script>
+    try {
+      window.TelegramAdsController = new TelegramAdsController();
+      window.TelegramAdsController.initialize({
+        pubId: "1028723",
+        appId: "9621",
+      });
+    } catch (e) {
+      console.warn("RichAds controller init note:", e);
+    }
+  </script>
   <script defer type="module" src="/app.mjs"></script>
 </head>
 <body data-theme="mint">
