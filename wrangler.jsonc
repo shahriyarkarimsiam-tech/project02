@@ -12,7 +12,10 @@
     "MONETAG_APP_ID": "3572709",
     "ADSGRAM_BLOCK_ID": "59239",
     "ONCLICKA_SPOT_ID": "6155185",
-    "ONCLICKA_ADCODE_ID": "472125"
+    "ONCLICKA_ADCODE_ID": "472125",
+    "RICHADS_PUB_ID": "1028723",
+    "RICHADS_SITE_ID": "412421",
+    "RICHADS_VAST_URL": "https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421"
   },
   "d1_databases": [
     {

@@ -1816,6 +1816,145 @@ async function playOnClickAAd() {
   }
 }
 
+async function playRichAdsVideo() {
+  const vastUrl = window.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
+  toast('Loading sponsor video from RichAds...');
+
+  let xmlText = '';
+  try {
+    const res = await fetch(vastUrl);
+    if (res.ok) xmlText = await res.text();
+  } catch (err) {
+    console.warn('[RichAds] Primary VAST endpoint failed:', err);
+  }
+
+  // Fallback to test endpoint if no ad filled in current geo
+  if (!xmlText || !xmlText.includes('<MediaFile')) {
+    try {
+      const testRes = await fetch('https://16793.rtb.adp3.net/pre-roll-rp?test=1');
+      if (testRes.ok) xmlText = await testRes.text();
+    } catch {}
+  }
+
+  if (!xmlText || !xmlText.includes('<MediaFile')) {
+    throw new Error('RichAds returned no video ad fill');
+  }
+
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  const mediaFile = doc.querySelector('MediaFile')?.textContent?.trim();
+  if (!mediaFile) {
+    throw new Error('No video media file found in RichAds VAST');
+  }
+
+  const impressions = Array.from(doc.querySelectorAll('Impression')).map(el => el.textContent?.trim()).filter(Boolean);
+  const startTracking = Array.from(doc.querySelectorAll('Tracking[event="start"]')).map(el => el.textContent?.trim()).filter(Boolean);
+  const completeTracking = Array.from(doc.querySelectorAll('Tracking[event="complete"]')).map(el => el.textContent?.trim()).filter(Boolean);
+  const clickThrough = doc.querySelector('ClickThrough')?.textContent?.trim() || null;
+
+  const beacon = url => {
+    try { if (url) { const img = new Image(); img.src = url; } } catch {}
+  };
+
+  const dialog = $('ad-player-dialog');
+  const videoEl = $('ad-video-element');
+  const card = $('ad-showcase-card');
+  const timerBadge = $('ad-timer-badge');
+  const progressBar = $('ad-progress-bar');
+  const claimBtn = $('ad-claim-btn');
+  const cancelBtn = $('ad-cancel-btn');
+
+  return new Promise((resolve, reject) => {
+    let completed = false;
+
+    const cleanup = () => {
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        videoEl.style.display = 'none';
+        videoEl.onplay = null;
+        videoEl.ontimeupdate = null;
+        videoEl.onended = null;
+        videoEl.onerror = null;
+        videoEl.onclick = null;
+      }
+      if (card) card.style.display = 'flex';
+      if (cancelBtn) cancelBtn.onclick = null;
+    };
+
+    if (cancelBtn) {
+      cancelBtn.onclick = () => {
+        cleanup();
+        dialog?.close();
+        if (!completed) reject(new Error('User closed RichAds video before completion'));
+      };
+    }
+
+    if (card) card.style.display = 'none';
+    if (videoEl) {
+      videoEl.style.display = 'block';
+      videoEl.src = mediaFile;
+      videoEl.controls = false;
+      videoEl.playsInline = true;
+
+      videoEl.onclick = () => {
+        if (clickThrough) {
+          try {
+            if (tg?.openLink) tg.openLink(clickThrough);
+            else window.open(clickThrough, '_blank');
+          } catch {
+            window.open(clickThrough, '_blank');
+          }
+        }
+      };
+
+      videoEl.onplay = () => {
+        impressions.forEach(beacon);
+        startTracking.forEach(beacon);
+      };
+
+      videoEl.ontimeupdate = () => {
+        if (!videoEl.duration) return;
+        const remaining = Math.max(0, Math.ceil(videoEl.duration - videoEl.currentTime));
+        const pct = Math.min(100, (videoEl.currentTime / videoEl.duration) * 100);
+        if (timerBadge) timerBadge.textContent = `${remaining}s`;
+        if (progressBar) progressBar.style.width = `${pct}%`;
+        if (claimBtn) claimBtn.textContent = `Watching RichAds sponsor (${remaining}s)...`;
+      };
+
+      videoEl.onended = async () => {
+        completed = true;
+        completeTracking.forEach(beacon);
+        cleanup();
+        currentAdNetwork = 'richads';
+        try {
+          await claimAdReward();
+          resolve(true);
+        } catch (e) {
+          reject(e);
+        }
+      };
+
+      videoEl.onerror = () => {
+        cleanup();
+        reject(new Error('RichAds video playback error'));
+      };
+
+      dialog?.showModal();
+      videoEl.play().catch(playErr => {
+        console.warn('Autoplay failed, attempting muted playback:', playErr);
+        videoEl.muted = true;
+        videoEl.play().catch(e => {
+          cleanup();
+          reject(e);
+        });
+      });
+    } else {
+      reject(new Error('Video element not found in DOM'));
+    }
+  });
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -1931,7 +2070,7 @@ async function refreshPoolData() {
   updateCountdownClocks();
 }
 
-const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.ONCLICKA_SPOT_ID || window.LIVE_ADS_ACTIVE);
+const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.ONCLICKA_SPOT_ID || window.RICHADS_VAST_URL || window.LIVE_ADS_ACTIVE);
 
 function updateCooldownDisplay() {
   const live = hasLiveAds();
@@ -2073,11 +2212,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 4. Fallback verified ad partners
+  // 4. Quaternary: RichAds VAST Video Ad (PubID: 1028723, SiteID: 412421)
+  const richadsUrl = window.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
+  if (richadsUrl) {
+    try {
+      await playRichAdsVideo();
+      return;
+    } catch (richadsErr) {
+      console.warn('RichAds VAST presentation failed:', richadsErr);
+    }
+  }
+
+  // 5. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2097,7 +2247,7 @@ async function openAdPlayer() {
     }
   }
 
-  toast('No ad fill available right now from AdsGram, Monetag, or OnClickA. Please try again in a few moments.');
+  toast('No ad fill available right now from AdsGram, Monetag, OnClickA, or RichAds. Please try again in a few moments.');
 }
 
 function closeAdPlayer(rewarded = false) {
@@ -2510,6 +2660,8 @@ async function boot() {
       window.ADSGRAM_BLOCK_ID = health.adsgramBlockId || '59239';
       window.MONETAG_ZONE_ID = health.monetagZoneId || '12239871';
       window.ONCLICKA_SPOT_ID = health.onclickaSpotId || '6155185';
+      window.RICHADS_VAST_URL = health.richadsVastUrl || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
+      window.RICHADS_PUB_ID = health.richadsPubId || '1028723';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();

@@ -15,7 +15,9 @@ test('health endpoint reports enabled monetization and pool', async () => {
     ADS_ACTIVE: 'true',
     ADSGRAM_BLOCK_ID: '59239',
     MONETAG_ZONE_ID: '12239871',
-    ONCLICKA_SPOT_ID: '6155185'
+    ONCLICKA_SPOT_ID: '6155185',
+    RICHADS_PUB_ID: '1028723',
+    RICHADS_SITE_ID: '412421'
   });
   assert.equal(result.status, 200);
   const data = await result.json();
@@ -26,8 +28,10 @@ test('health endpoint reports enabled monetization and pool', async () => {
   assert.equal(data.adsgramBlockId, '59239');
   assert.equal(data.monetagZoneId, '12239871');
   assert.equal(data.onclickaSpotId, '6155185');
+  assert.equal(data.richadsPubId, '1028723');
   assert(data.activeNetworks);
   assert(data.activeNetworks.onclicka);
+  assert(data.activeNetworks.richads);
 });
 
 test('health endpoint reports adsEnabled: false when no real ads configured', async () => {

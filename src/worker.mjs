@@ -164,6 +164,7 @@ async function getActiveAdNetworks(env) {
   if (env.ADSGRAM_BLOCK_ID) active.adsgram = { type: 'sdk', blockId: env.ADSGRAM_BLOCK_ID };
   if (env.MONETAG_ZONE_ID) active.monetag = { type: 'zone', zoneId: env.MONETAG_ZONE_ID };
   if (env.ONCLICKA_SPOT_ID) active.onclicka = { type: 'spot', spotId: env.ONCLICKA_SPOT_ID, adCodeId: env.ONCLICKA_ADCODE_ID || null };
+  if (env.RICHADS_PUB_ID || env.RICHADS_VAST_URL) active.richads = { type: 'vast', pubId: env.RICHADS_PUB_ID || '1028723', siteId: env.RICHADS_SITE_ID || '412421', vastUrl: env.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421' };
   if (env.ADS_ACTIVE === 'true') active.direct = { type: 'test' };
 
   if (env.DB) {
@@ -1036,6 +1037,8 @@ async function route(request, env) {
       adsgramBlockId: activeNets.adsgram?.blockId || activeNets.adsgram?.value || env.ADSGRAM_BLOCK_ID || null,
       monetagZoneId: activeNets.monetag?.zoneId || activeNets.monetag?.value || env.MONETAG_ZONE_ID || null,
       onclickaSpotId: activeNets.onclicka?.spotId || activeNets.onclicka?.value || env.ONCLICKA_SPOT_ID || null,
+      richadsPubId: activeNets.richads?.pubId || env.RICHADS_PUB_ID || '1028723',
+      richadsVastUrl: activeNets.richads?.vastUrl || env.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421',
       withdrawalsEnabled: true
     });
   }
