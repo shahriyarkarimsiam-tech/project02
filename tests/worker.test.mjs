@@ -825,6 +825,66 @@ test('POST /api/ads/claim supports multi-network tracking', async () => {
   assert.equal(adsterraData.ok, true);
   assert.equal(adsterraData.network, 'adsterra');
   assert.equal(adsterraData.rewardStars, 1);
+
+  // Test AdsGram network claim
+  const adsgramResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'adsgram' })
+  }), { DB: mockDB, SESSION_SECRET, ADSGRAM_BLOCK_ID: '59239' });
+  assert.equal(adsgramResp.status, 200);
+  const adsgramData = await adsgramResp.json();
+  assert.equal(adsgramData.ok, true);
+  assert.equal(adsgramData.network, 'adsgram');
+  assert.equal(adsgramData.rewardStars, 1);
+
+  // Test OnClickA network claim
+  const onclickaResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'onclicka' })
+  }), { DB: mockDB, SESSION_SECRET, ONCLICKA_SPOT_ID: '6155185' });
+  assert.equal(onclickaResp.status, 200);
+  const onclickaData = await onclickaResp.json();
+  assert.equal(onclickaData.ok, true);
+  assert.equal(onclickaData.network, 'onclicka');
+  assert.equal(onclickaData.rewardStars, 1);
+
+  // Test RichAds network claim
+  const richadsResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'richads' })
+  }), { DB: mockDB, SESSION_SECRET, RICHADS_PUB_ID: '1028723' });
+  assert.equal(richadsResp.status, 200);
+  const richadsData = await richadsResp.json();
+  assert.equal(richadsData.ok, true);
+  assert.equal(richadsData.network, 'richads');
+  assert.equal(richadsData.rewardStars, 1);
+
+  // Test TADS network claim
+  const tadsResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'tads' })
+  }), { DB: mockDB, SESSION_SECRET, TADS_WIDGET_ID: '13243' });
+  assert.equal(tadsResp.status, 200);
+  const tadsData = await tadsResp.json();
+  assert.equal(tadsData.ok, true);
+  assert.equal(tadsData.network, 'tads');
+  assert.equal(tadsData.rewardStars, 1);
+
+  // Test Adexium network claim
+  const adexiumResp = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'adexium' })
+  }), { DB: mockDB, SESSION_SECRET, ADEXIUM_WID: '4672c32d-e0b9-41f8-976d-c7ccc51ac091' });
+  assert.equal(adexiumResp.status, 200);
+  const adexiumData = await adexiumResp.json();
+  assert.equal(adexiumData.ok, true);
+  assert.equal(adexiumData.network, 'adexium');
+  assert.equal(adexiumData.rewardStars, 1);
 });
 
 test('POST /api/ads/claim rejects with 400 when no real ads configured', async () => {
