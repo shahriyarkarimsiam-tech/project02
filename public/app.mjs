@@ -2013,6 +2013,9 @@ function startCooldownTimer(seconds = 60) {
 }
 
 async function openAdPlayer() {
+  if (!online && (getTelegramInitData() || tg?.initDataUnsafe?.user)) {
+    await authenticate();
+  }
   if (!hasLiveAds()) {
     toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks approve campaigns.');
     return;
@@ -2028,7 +2031,7 @@ async function openAdPlayer() {
 
   // 1. Primary: AdsGram Rewarded Video (UnitID: 59239)
   const adsgramBlock = window.ADSGRAM_BLOCK_ID || '59239';
-  if (online && window.Adsgram && adsgramBlock) {
+  if (window.Adsgram && adsgramBlock) {
     try {
       initAdsGramSDK();
       if (adsgramController) {
@@ -2122,8 +2125,19 @@ async function claimAdReward() {
       startCooldownTimer(res.cooldownSeconds || 60);
       toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
     } else {
-      toast('⚠️ Guest practice mode cannot earn stars. Stars are only awarded for real completed sponsor ads in Telegram.');
-      return;
+      // Re-attempt authentication one more time before rejecting
+      const reauthed = await authenticate();
+      if (reauthed) {
+        const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
+        player.stars = res.stars;
+        player.weeklyStars = res.weeklyStars;
+        poolData.adsWatchedToday = res.adsToday;
+        startCooldownTimer(res.cooldownSeconds || 60);
+        toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
+      } else {
+        toast('⚠️ Open Merge Streak inside Telegram to earn verified Stars for your account.');
+        return;
+      }
     }
 
     closeAdPlayer(true);
