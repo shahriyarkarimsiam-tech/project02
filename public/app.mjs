@@ -1824,29 +1824,16 @@ async function playMonetagAd() {
   const fn = window[fnName];
   const ymid = player?.id ? String(player.id) : undefined;
 
-  let adShown = false;
-  // Format 1: Rewarded Interstitial
+  // STRICT REQUIREMENT: Only rewarded_ad that user completes awards a Star
   try {
     await fn(ymid ? { ymid, requestVar: 'rewarded_ad' } : undefined);
-    adShown = true;
-  } catch (err) {
-    console.warn('Monetag Rewarded Interstitial fallback to Rewarded Popup:', err);
-    // Format 2: Rewarded Popup ('pop')
-    try {
-      await fn('pop');
-      adShown = true;
-    } catch (popErr) {
-      console.warn('Monetag Rewarded Popup also failed:', popErr);
-      throw popErr;
-    }
-  }
-
-  if (adShown) {
     currentAdNetwork = 'monetag';
     await claimAdReward();
     return true;
+  } catch (err) {
+    console.warn('Monetag rewarded ad failed or skipped:', err);
+    throw new Error('Monetag rewarded ad was not completed');
   }
-  throw new Error('Monetag ad presentation was not completed');
 }
 
 let onclickaShowFn = null;
@@ -1903,31 +1890,7 @@ async function playOnClickAAd() {
 }
 
 async function playRichAdsVideo() {
-  toast('Loading sponsor ad from RichAds...');
-
-  // Primary: Official RichAds Telegram Mini App SDK Controller
-  if (window.TelegramAdsController) {
-    try {
-      if (typeof window.TelegramAdsController.triggerInterstitialVideo === 'function') {
-        await window.TelegramAdsController.triggerInterstitialVideo();
-        currentAdNetwork = 'richads';
-        await claimAdReward();
-        return true;
-      } else if (typeof window.TelegramAdsController.triggerInterstitialMixed === 'function') {
-        await window.TelegramAdsController.triggerInterstitialMixed();
-        currentAdNetwork = 'richads';
-        await claimAdReward();
-        return true;
-      } else if (typeof window.TelegramAdsController.triggerInterstitialBanner === 'function') {
-        await window.TelegramAdsController.triggerInterstitialBanner();
-        currentAdNetwork = 'richads';
-        await claimAdReward();
-        return true;
-      }
-    } catch (sdkErr) {
-      console.warn('[RichAds SDK] Trigger notice, falling back to VAST:', sdkErr);
-    }
-  }
+  toast('Loading sponsor video from RichAds...');
 
   const vastUrl = window.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
 
@@ -2073,18 +2036,9 @@ function initTadsSDK() {
       window.tads.init({
         widgetId,
         type: 'static',
-        debug: false,
-        onClickReward: () => {
-          currentAdNetwork = 'tads';
-          claimAdReward();
-        },
-        onShowReward: () => {
-          currentAdNetwork = 'tads';
-          claimAdReward();
-        },
-        onAdsNotFound: () => {}
+        debug: false
       });
-      console.log('[TADS] Widget initialized successfully (ID: ' + widgetId + ')');
+      console.log('[TADS] Static banner initialized (ID: ' + widgetId + ')');
     } catch (e) {
       console.warn('[TADS] init notice:', e);
     }
@@ -2171,16 +2125,7 @@ function initAdexiumSDK() {
         wid,
         adFormat: 'interstitial'
       });
-      adexiumWidget.on('adDisplayed', () => {
-        currentAdNetwork = 'adexium';
-        claimAdReward();
-      });
-      adexiumWidget.on('adClosed', () => {
-        currentAdNetwork = 'adexium';
-        claimAdReward();
-      });
-      adexiumWidget.autoMode();
-      console.log('[Adexium] Widget initialized and autoMode active (WID: ' + wid + ')');
+      console.log('[Adexium] Widget initialized (WID: ' + wid + ')');
     } catch (e) {
       console.warn('[Adexium] init note:', e);
     }
@@ -2205,18 +2150,36 @@ async function playAdexiumAd() {
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          reject(new Error('Adexium ad load timeout'));
+          reject(new Error('Adexium ad load timeout or closed early'));
         }
-      }, 7000);
+      }, 10000);
 
       const ads = await adexiumWidget.requestRewardedAd('interstitial').catch(() => null);
       if (Array.isArray(ads) && ads.length > 0) {
-        clearTimeout(timer);
-        resolved = true;
+        const onAdClose = async () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            currentAdNetwork = 'adexium';
+            await claimAdReward();
+            resolve(true);
+          }
+        };
+
+        if (typeof adexiumWidget.once === 'function') {
+          adexiumWidget.once('adClosed', onAdClose);
+        } else if (typeof adexiumWidget.on === 'function') {
+          const handler = () => {
+            adexiumWidget.off?.('adClosed', handler);
+            onAdClose();
+          };
+          adexiumWidget.on('adClosed', handler);
+        } else {
+          clearTimeout(timer);
+          return reject(new Error('Adexium completion listener unavailable'));
+        }
+
         adexiumWidget.displayAd(ads, 'interstitial');
-        currentAdNetwork = 'adexium';
-        await claimAdReward();
-        resolve(true);
       } else {
         clearTimeout(timer);
         resolved = true;
@@ -2250,10 +2213,13 @@ async function playGigaPubAd() {
     }, 8000);
 
     window.showGiga()
-      .then(async () => {
+      .then(async (res) => {
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          if (res === false || (res && res.completed === false) || (res && res.done === false)) {
+            return reject(new Error('GigaPub video ad was not completed'));
+          }
           currentAdNetwork = 'gigapub';
           await claimAdReward();
           resolve(true);
@@ -2326,6 +2292,9 @@ async function playAdsunAd() {
           if (!resolved) {
             resolved = true;
             clearTimeout(timer);
+            if (!result || result.error || result.status === 'no_ad' || result.status === 'pending' || result.done === false || result.status === 'skipped') {
+              return reject(new Error('Adsun ad not filled or skipped'));
+            }
             currentAdNetwork = 'adsun';
             await claimAdReward();
             resolve(true);
@@ -2347,11 +2316,10 @@ async function playAdsunAd() {
 }
 
 async function playAdsterraAd() {
-  toast('Loading sponsor ad from Adsterra...');
-  await new Promise(r => setTimeout(r, 1500));
-  currentAdNetwork = 'adsterra';
-  await claimAdReward();
-  return true;
+  // Adsterra Social Bar is a passive floating push notification banner running in HTML.
+  // It does not provide an interactive rewarded video completion API.
+  // Strictly enforce: No completed rewarded video = No star awarded.
+  throw new Error('Adsterra Social Bar runs as floating display banner; rewarded video not supported.');
 }
 
 let poolData = {
