@@ -2837,6 +2837,7 @@ for (const button of document.querySelectorAll('[data-view-target]')) {
 $('pool-watch-ad-btn')?.addEventListener('click', openAdPlayer);
 $('sidebar-watch-ad-btn')?.addEventListener('click', openAdPlayer);
 $('arena-watch-ad-btn')?.addEventListener('click', openAdPlayer);
+$('finish-watch-ad-btn')?.addEventListener('click', () => { $('finish-dialog')?.close(); openAdPlayer(); });
 $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
