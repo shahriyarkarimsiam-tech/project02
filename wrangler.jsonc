@@ -9,7 +9,8 @@
   },
   "vars": {
     "MONETAG_ZONE_ID": "12239871",
-    "MONETAG_APP_ID": "3572709"
+    "MONETAG_APP_ID": "3572709",
+    "ADSGRAM_BLOCK_ID": "59239"
   },
   "d1_databases": [
     {

@@ -149,6 +149,8 @@ async function getActiveAdNetworks(env) {
           let val = row.value;
           try { val = JSON.parse(row.value); } catch {}
           active[net] = typeof val === 'object' ? val : { value: String(val) };
+          if (net === 'adsgram') active.adsgram.blockId = String(val);
+          if (net === 'monetag') active.monetag.zoneId = String(val);
         }
       }
     } catch {}

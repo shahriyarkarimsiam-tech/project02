@@ -1628,10 +1628,11 @@ let currentAdNetwork = 'adsgram';
 let adsgramController = null;
 
 function initAdsGramSDK() {
-  if (window.Adsgram && !adsgramController) {
+  const blockId = String(window.ADSGRAM_BLOCK_ID || '59239');
+  if (window.Adsgram && (!adsgramController || adsgramController._blockId !== blockId)) {
     try {
-      const blockId = window.ADSGRAM_BLOCK_ID || 'int-9191';
       adsgramController = window.Adsgram.init({ blockId });
+      adsgramController._blockId = blockId;
     } catch (e) {
       console.warn('AdsGram init notice:', e);
     }
@@ -1924,7 +1925,7 @@ function startCooldownTimer(seconds = 60) {
   }, 1000);
 }
 
-function openAdPlayer() {
+async function openAdPlayer() {
   if (!hasLiveAds()) {
     toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks approve campaigns.');
     return;
@@ -1938,37 +1939,40 @@ function openAdPlayer() {
     return;
   }
 
-  // 1. Primary: Monetag SDK integration (Zone: 12239871)
-  const monetagZone = window.MONETAG_ZONE_ID || '12239871';
-  if (monetagZone) {
-    playMonetagAd().catch((err) => {
-      console.warn('Monetag ad presentation notice:', err);
-      toast('Monetag ad was closed or no fill available right now. Please try again in a few moments.');
-    });
-    return;
-  }
-
-  // 2. AdsGram integration (Telegram Mini App Rewarded Video)
-  if (online && window.Adsgram && window.ADSGRAM_BLOCK_ID) {
-    initAdsGramSDK();
-    if (adsgramController) {
-      toast('Loading sponsor video from AdsGram...');
-      adsgramController.show().then(async (res) => {
+  // 1. Primary: AdsGram Rewarded Video (UnitID: 59239)
+  const adsgramBlock = window.ADSGRAM_BLOCK_ID || '59239';
+  if (online && window.Adsgram && adsgramBlock) {
+    try {
+      initAdsGramSDK();
+      if (adsgramController) {
+        toast('Loading sponsor video from AdsGram...');
+        const res = await adsgramController.show();
         if (res?.done) {
           currentAdNetwork = 'adsgram';
           await claimAdReward();
+          return;
         } else {
           toast('Video ad was not completed. 0 Stars awarded.');
+          return;
         }
-      }).catch((err) => {
-        console.warn('AdsGram ad error:', err);
-        toast('No video ad available right now from AdsGram. Please try again later.');
-      });
-      return;
+      }
+    } catch (adsgramErr) {
+      console.warn('AdsGram ad failed or no fill, falling back to Monetag:', adsgramErr);
     }
   }
 
-  // 3. Real URL / Direct link networks (OnClickA, Adsterra, Telega, etc.)
+  // 2. Secondary: Monetag SDK integration (Zone: 12239871)
+  const monetagZone = window.MONETAG_ZONE_ID || '12239871';
+  if (monetagZone) {
+    try {
+      await playMonetagAd();
+      return;
+    } catch (monetagErr) {
+      console.warn('Monetag ad presentation failed:', monetagErr);
+    }
+  }
+
+  // 3. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
@@ -1992,7 +1996,7 @@ function openAdPlayer() {
     }
   }
 
-  toast('⚠️ Real ad network configuration pending. Stars are only awarded for real completed ads.');
+  toast('No ad fill available right now from AdsGram or Monetag. Please try again in a few moments.');
 }
 
 function closeAdPlayer(rewarded = false) {
@@ -2388,10 +2392,11 @@ async function boot() {
     const health = await api('/health').catch(() => null);
     if (health) {
       window.LIVE_ADS_ACTIVE = Boolean(health.adsEnabled);
-      if (health.adsgramBlockId) window.ADSGRAM_BLOCK_ID = health.adsgramBlockId;
+      window.ADSGRAM_BLOCK_ID = health.adsgramBlockId || '59239';
       window.MONETAG_ZONE_ID = health.monetagZoneId || '12239871';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
+      initAdsGramSDK();
     }
   } catch {}
 
