@@ -138,6 +138,7 @@ async function getActiveAdNetworks(env) {
   const active = {};
   if (env.ADSGRAM_BLOCK_ID) active.adsgram = { type: 'sdk', blockId: env.ADSGRAM_BLOCK_ID };
   if (env.MONETAG_ZONE_ID) active.monetag = { type: 'zone', zoneId: env.MONETAG_ZONE_ID };
+  if (env.ONCLICKA_SPOT_ID) active.onclicka = { type: 'spot', spotId: env.ONCLICKA_SPOT_ID, adCodeId: env.ONCLICKA_ADCODE_ID || null };
   if (env.ADS_ACTIVE === 'true') active.direct = { type: 'test' };
 
   if (env.DB) {
@@ -151,6 +152,7 @@ async function getActiveAdNetworks(env) {
           active[net] = typeof val === 'object' ? val : { value: String(val) };
           if (net === 'adsgram') active.adsgram.blockId = String(val);
           if (net === 'monetag') active.monetag.zoneId = String(val);
+          if (net === 'onclicka') active.onclicka.spotId = String(val);
         }
       }
     } catch {}
@@ -997,6 +999,7 @@ async function route(request, env) {
       activeNetworks: activeNets,
       adsgramBlockId: activeNets.adsgram?.blockId || activeNets.adsgram?.value || env.ADSGRAM_BLOCK_ID || null,
       monetagZoneId: activeNets.monetag?.zoneId || activeNets.monetag?.value || env.MONETAG_ZONE_ID || null,
+      onclickaSpotId: activeNets.onclicka?.spotId || activeNets.onclicka?.value || env.ONCLICKA_SPOT_ID || null,
       withdrawalsEnabled: true
     });
   }

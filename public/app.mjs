@@ -1729,6 +1729,59 @@ async function playMonetagAd() {
   }
 }
 
+let onclickaShowFn = null;
+let onclickaInitPromise = null;
+
+async function initOnClickASDK() {
+  const spotId = Number(window.ONCLICKA_SPOT_ID || '6155185');
+  if (onclickaShowFn) return onclickaShowFn;
+  if (onclickaInitPromise) return onclickaInitPromise;
+
+  onclickaInitPromise = (async () => {
+    let waited = 0;
+    while (typeof window.initCdTma !== 'function' && waited < 3500) {
+      await new Promise(r => setTimeout(r, 100));
+      waited += 100;
+    }
+    if (typeof window.initCdTma === 'function' && spotId) {
+      try {
+        const show = await window.initCdTma({ id: spotId });
+        if (typeof show === 'function') {
+          onclickaShowFn = show;
+          console.log('[OnClickA] TMA Rewarded Video initialized successfully (Spot: ' + spotId + ')');
+          return show;
+        }
+      } catch (e) {
+        console.warn('[OnClickA] init notice:', e);
+      }
+    }
+    return null;
+  })();
+
+  return onclickaInitPromise;
+}
+
+async function playOnClickAAd() {
+  let show = onclickaShowFn;
+  if (!show) {
+    show = await initOnClickASDK();
+  }
+  if (typeof show !== 'function') {
+    throw new Error('OnClickA TMA SDK not ready or not supported');
+  }
+
+  toast('Loading sponsor video from OnClickA...');
+  try {
+    await show();
+    currentAdNetwork = 'onclicka';
+    await claimAdReward();
+    return true;
+  } catch (err) {
+    console.warn('[OnClickA] Ad display or completion error:', err);
+    throw err;
+  }
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -1844,7 +1897,7 @@ async function refreshPoolData() {
   updateCountdownClocks();
 }
 
-const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.LIVE_ADS_ACTIVE);
+const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.ONCLICKA_SPOT_ID || window.LIVE_ADS_ACTIVE);
 
 function updateCooldownDisplay() {
   const live = hasLiveAds();
@@ -1972,11 +2025,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 3. Fallback verified ad partners
+  // 3. Tertiary: OnClickA TMA Rewarded Video (Spot: 6155185)
+  const onclickaSpot = window.ONCLICKA_SPOT_ID || '6155185';
+  if (onclickaSpot) {
+    try {
+      await playOnClickAAd();
+      return;
+    } catch (onclickaErr) {
+      console.warn('OnClickA ad presentation failed:', onclickaErr);
+    }
+  }
+
+  // 4. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -1996,7 +2060,7 @@ async function openAdPlayer() {
     }
   }
 
-  toast('No ad fill available right now from AdsGram or Monetag. Please try again in a few moments.');
+  toast('No ad fill available right now from AdsGram, Monetag, or OnClickA. Please try again in a few moments.');
 }
 
 function closeAdPlayer(rewarded = false) {
@@ -2394,9 +2458,11 @@ async function boot() {
       window.LIVE_ADS_ACTIVE = Boolean(health.adsEnabled);
       window.ADSGRAM_BLOCK_ID = health.adsgramBlockId || '59239';
       window.MONETAG_ZONE_ID = health.monetagZoneId || '12239871';
+      window.ONCLICKA_SPOT_ID = health.onclickaSpotId || '6155185';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
+      initOnClickASDK();
     }
   } catch {}
 

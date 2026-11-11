@@ -11,14 +11,23 @@ async function authHeader(uid = '1001') {
 }
 
 test('health endpoint reports enabled monetization and pool', async () => {
-  const result = await worker.fetch(new Request('https://example.com/api/health'), { ADS_ACTIVE: 'true' });
+  const result = await worker.fetch(new Request('https://example.com/api/health'), {
+    ADS_ACTIVE: 'true',
+    ADSGRAM_BLOCK_ID: '59239',
+    MONETAG_ZONE_ID: '12239871',
+    ONCLICKA_SPOT_ID: '6155185'
+  });
   assert.equal(result.status, 200);
   const data = await result.json();
   assert.equal(data.ok, true);
   assert.equal(data.version, '0.3.0');
   assert.equal(data.adsEnabled, true);
   assert.equal(data.withdrawalsEnabled, true);
+  assert.equal(data.adsgramBlockId, '59239');
+  assert.equal(data.monetagZoneId, '12239871');
+  assert.equal(data.onclickaSpotId, '6155185');
   assert(data.activeNetworks);
+  assert(data.activeNetworks.onclicka);
 });
 
 test('health endpoint reports adsEnabled: false when no real ads configured', async () => {

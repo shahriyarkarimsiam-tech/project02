@@ -10,7 +10,9 @@
   "vars": {
     "MONETAG_ZONE_ID": "12239871",
     "MONETAG_APP_ID": "3572709",
-    "ADSGRAM_BLOCK_ID": "59239"
+    "ADSGRAM_BLOCK_ID": "59239",
+    "ONCLICKA_SPOT_ID": "6155185",
+    "ONCLICKA_ADCODE_ID": "472125"
   },
   "d1_databases": [
     {
