@@ -66,6 +66,46 @@ async function isAuthorizedAdmin(uid, env) {
   return false;
 }
 
+const SUPPORTED_AD_NETWORKS = [
+  'direct',
+  'monetag',
+  'adsgram',
+  'onclicka',
+  'richads',
+  'telega',
+  'tads',
+  'adexium',
+  'gigapub',
+  'adsun',
+  'litebits',
+  'adskinz',
+  'openad',
+  'adsterra',
+  'taskkit'
+];
+
+async function getActiveAdNetworks(env) {
+  const active = {};
+  if (env.ADSGRAM_BLOCK_ID) active.adsgram = { type: 'sdk', blockId: env.ADSGRAM_BLOCK_ID };
+  if (env.MONETAG_ZONE_ID) active.monetag = { type: 'zone', zoneId: env.MONETAG_ZONE_ID };
+  if (env.ADS_ACTIVE === 'true') active.direct = { type: 'test' };
+
+  if (env.DB) {
+    try {
+      const rows = await env.DB.prepare('SELECT key, value FROM system_settings WHERE key LIKE "ad_%"').all();
+      for (const row of rows?.results || []) {
+        const net = row.key.replace(/^ad_/, '').toLowerCase();
+        if (SUPPORTED_AD_NETWORKS.includes(net)) {
+          let val = row.value;
+          try { val = JSON.parse(row.value); } catch {}
+          active[net] = typeof val === 'object' ? val : { value: String(val) };
+        }
+      }
+    } catch {}
+  }
+  return active;
+}
+
 async function recordReferral(env, referredId, rawRef) {
   if (!env.DB || !referredId || !rawRef) return;
   const refClean = String(rawRef).replace(/^ref_/, '').trim();
@@ -408,7 +448,7 @@ async function handleTelegramWebhook(request, env) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${safeFirstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
+          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${safeFirstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email\n• `/ads_status` - Live status of 13 ad networks\n• `/set_ad <network> <val>` - Activate approved ad network\n• `/remove_ad <network>` - Disable ad network' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
           parse_mode: 'Markdown'
         })
       });
@@ -710,6 +750,116 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
+    // 10. /ads_status command
+    if (text === '/ads_status') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const activeNets = await getActiveAdNetworks(env);
+      const platforms = [
+        ['AdsGram', 'adsgram'],
+        ['Monetag', 'monetag'],
+        ['OnClickA', 'onclicka'],
+        ['RichAds', 'richads'],
+        ['Telega.io', 'telega'],
+        ['TADS', 'tads'],
+        ['Adexium', 'adexium'],
+        ['GigaPub', 'gigapub'],
+        ['Adsun', 'adsun'],
+        ['LiteBits Ads', 'litebits'],
+        ['AdsKinz', 'adskinz'],
+        ['OpenAD Protocol', 'openad'],
+        ['Adsterra', 'adsterra']
+      ];
+      let msg = `📡 *Ad Networks Live Status (13 Platforms):*\n\n`;
+      let liveCount = 0;
+      for (const [name, key] of platforms) {
+        const isLive = Boolean(activeNets[key]);
+        if (isLive) liveCount++;
+        msg += `• *${name}:* ${isLive ? '🟢 LIVE (Ads Active)' : '⏸ Awaiting Approval'}\n`;
+      }
+      msg += `\n*Summary:* ${liveCount} of 13 networks approved and serving real ads.\n`;
+      msg += `\n👉 *To activate approved ads for any network:*\n\`/set_ad <network> <zone_id_or_url>\`\nExample: \`/set_ad adsgram 4128\`\nExample: \`/set_ad monetag https://.../link\`\n\n👉 *To disable:* \`/remove_ad <network>\``;
+
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
+      });
+      return json({ ok: true });
+    }
+
+    // 11. /set_ad <network> <value>
+    const setAdMatch = text.match(/^\/set_ad\s+([a-zA-Z0-9_-]+)\s+(\S+)$/);
+    if (setAdMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const rawNet = setAdMatch[1].toLowerCase().trim();
+      const val = setAdMatch[2].trim();
+      if (!SUPPORTED_AD_NETWORKS.includes(rawNet)) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `❌ Unknown network "${rawNet}". Supported networks: ${SUPPORTED_AD_NETWORKS.join(', ')}` })
+        });
+        return json({ ok: true });
+      }
+
+      await env.DB.prepare(
+        'INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at'
+      ).bind(`ad_${rawNet}`, val, now()).run();
+
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `✅ *Ad Network Activated: ${rawNet.toUpperCase()}*\n\n• *Config:* \`${val}\`\n• *Status:* 🟢 LIVE\n\nThe mini app has automatically enabled real ads for this network. When users complete real ads, Stars will be awarded automatically!`,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
+
+    // 12. /remove_ad <network>
+    const removeAdMatch = text.match(/^\/remove_ad\s+([a-zA-Z0-9_-]+)$/);
+    if (removeAdMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const rawNet = removeAdMatch[1].toLowerCase().trim();
+      await env.DB.prepare('DELETE FROM system_settings WHERE key = ?').bind(`ad_${rawNet}`).run();
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `⚠️ *Ad Network Deactivated: ${rawNet.toUpperCase()}*\n\nReal ads from this network are disabled in the mini app.`,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
+
     const welcomeRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -751,37 +901,21 @@ async function handleTelegramWebhook(request, env) {
   return json({ ok: true });
 }
 
-const SUPPORTED_AD_NETWORKS = [
-  'direct',
-  'monetag',
-  'adsgram',
-  'onclicka',
-  'richads',
-  'telega',
-  'tads',
-  'adexium',
-  'gigapub',
-  'adsun',
-  'litebits',
-  'adskinz',
-  'openad',
-  'adsterra',
-  'taskkit'
-];
-
 async function handleAdPostback(request, env) {
   if (!env.DB) return fail(503, 'Database unavailable');
   const url = new URL(request.url);
-  let uid, rawNet, secret;
+  let uid, rawNet, secret, revenueParam;
   if (request.method === 'POST') {
     const input = await bodyJSON(request).catch(() => ({}));
     uid = input.user_id || input.subid || input.uid || input.click_id;
     rawNet = input.network || 'monetag';
     secret = input.secret;
+    revenueParam = input.revenue || input.payout || input.amount;
   } else {
     uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id');
     rawNet = url.searchParams.get('network') || 'monetag';
     secret = url.searchParams.get('secret');
+    revenueParam = url.searchParams.get('revenue') || url.searchParams.get('payout') || url.searchParams.get('amount');
   }
   if (!uid) return fail(400, 'Missing user_id parameter');
   if (env.POSTBACK_SECRET && secret !== env.POSTBACK_SECRET) {
@@ -794,8 +928,9 @@ async function handleAdPostback(request, env) {
   const stamp = now();
   const weekId = currentWeekId();
   const impressionId = crypto.randomUUID();
-  const adRevenue = 0.02;
-  const communityShare = 0.01;
+  const parsedRev = parseFloat(revenueParam);
+  const adRevenue = (!isNaN(parsedRev) && parsedRev > 0) ? parsedRev : 0.02;
+  const communityShare = adRevenue * REVENUE_SHARE_RATIO;
 
   await env.DB.batch([
     env.DB.prepare(
@@ -812,10 +947,13 @@ async function handleAdPostback(request, env) {
         total_revenue_usdt = total_revenue_usdt + excluded.total_revenue_usdt,
         community_pool_usdt = community_pool_usdt + excluded.community_pool_usdt,
         value_per_star = (community_pool_usdt + excluded.community_pool_usdt) / (total_stars + 1)
-    `).bind(weekId, adRevenue, communityShare, communityShare)
+    `).bind(weekId, adRevenue, communityShare, communityShare),
+    env.DB.prepare(
+      'INSERT INTO system_settings (key, value, updated_at) VALUES (?, "active", ?) ON CONFLICT(key) DO UPDATE SET updated_at=excluded.updated_at'
+    ).bind(`ad_${network}`, stamp)
   ]);
 
-  return json({ ok: true, user_id: uid, network, starsAwarded: 1 });
+  return json({ ok: true, user_id: uid, network, starsAwarded: 1, revenueRecorded: adRevenue });
 }
 
 async function route(request, env) {
@@ -833,13 +971,15 @@ async function route(request, env) {
 
   if (method !== 'GET' && !originAllowed(request)) return fail(403, 'Invalid request origin');
   if (method === 'GET' && path === '/api/health') {
-    const hasLive = Boolean(env.ADS_ACTIVE === 'true' || env.ADSGRAM_BLOCK_ID || env.MONETAG_ZONE_ID);
+    const activeNets = await getActiveAdNetworks(env);
+    const hasLive = Object.keys(activeNets).length > 0;
     return json({
       ok: true,
       version: '0.3.0',
       adsEnabled: hasLive,
-      adsgramBlockId: env.ADSGRAM_BLOCK_ID || null,
-      monetagZoneId: env.MONETAG_ZONE_ID || null,
+      activeNetworks: activeNets,
+      adsgramBlockId: activeNets.adsgram?.blockId || activeNets.adsgram?.value || env.ADSGRAM_BLOCK_ID || null,
+      monetagZoneId: activeNets.monetag?.zoneId || activeNets.monetag?.value || env.MONETAG_ZONE_ID || null,
       withdrawalsEnabled: true
     });
   }
@@ -950,10 +1090,20 @@ async function route(request, env) {
 
     if (method === 'POST' && path === '/api/ads/claim') {
       if (!env.DB) return fail(503, 'Database unavailable');
-      const hasLive = Boolean(env.ADS_ACTIVE === 'true' || env.ADSGRAM_BLOCK_ID || env.MONETAG_ZONE_ID);
+      const activeNets = await getActiveAdNetworks(env);
+      const hasLive = Object.keys(activeNets).length > 0;
       if (!hasLive) {
         return fail(400, 'No active real ad network configured. Stars cannot be awarded without real ad revenue.');
       }
+
+      const input = await bodyJSON(request).catch(() => ({}));
+      const rawNet = String(input.network || '').toLowerCase();
+      const adNetwork = SUPPORTED_AD_NETWORKS.includes(rawNet) ? rawNet : null;
+
+      if (!adNetwork || (!activeNets[adNetwork] && env.ADS_ACTIVE !== 'true')) {
+        return fail(400, `Ad network "${rawNet}" is not currently approved or active. Real ads must be verified before stars are awarded.`);
+      }
+
       const player = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at FROM players WHERE id=?').bind(uid).first();
       if (!player) return fail(404, 'Player not found');
 
@@ -970,9 +1120,6 @@ async function route(request, env) {
         return fail(429, 'Daily ad limit reached (20 ads / 24 hours). Come back tomorrow!');
       }
 
-      const input = await bodyJSON(request).catch(() => ({}));
-      const rawNet = String(input.network || 'direct').toLowerCase();
-      const adNetwork = SUPPORTED_AD_NETWORKS.includes(rawNet) ? rawNet : 'direct';
       const weekId = currentWeekId();
       const impressionId = crypto.randomUUID();
       const adRevenue = 0.02;

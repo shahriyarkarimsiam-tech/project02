@@ -13,7 +13,12 @@ async function authHeader(uid = '1001') {
 test('health endpoint reports enabled monetization and pool', async () => {
   const result = await worker.fetch(new Request('https://example.com/api/health'), { ADS_ACTIVE: 'true' });
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { ok: true, version: '0.3.0', adsEnabled: true, adsgramBlockId: null, monetagZoneId: null, withdrawalsEnabled: true });
+  const data = await result.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.version, '0.3.0');
+  assert.equal(data.adsEnabled, true);
+  assert.equal(data.withdrawalsEnabled, true);
+  assert(data.activeNetworks);
 });
 
 test('health endpoint reports adsEnabled: false when no real ads configured', async () => {

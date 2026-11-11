@@ -1836,7 +1836,7 @@ function startCooldownTimer(seconds = 60) {
 
 function openAdPlayer() {
   if (!hasLiveAds()) {
-    toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks go live.');
+    toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks approve campaigns.');
     return;
   }
   if (currentCooldown > 0) {
@@ -1848,19 +1848,46 @@ function openAdPlayer() {
     return;
   }
 
-  // Check if live AdsGram SDK is present in Telegram
+  // 1. AdsGram integration (Telegram Mini App Rewarded Video)
   if (online && window.Adsgram && window.ADSGRAM_BLOCK_ID) {
     initAdsGramSDK();
     if (adsgramController) {
+      toast('Loading sponsor video from AdsGram...');
       adsgramController.show().then(async (res) => {
         if (res?.done) {
           currentAdNetwork = 'adsgram';
           await claimAdReward();
+        } else {
+          toast('Video ad was not completed. 0 Stars awarded.');
         }
       }).catch((err) => {
         console.warn('AdsGram ad error:', err);
-        toast('Ad was not completed. 0 Stars awarded.');
+        toast('No video ad available right now from AdsGram. Please try again later.');
       });
+      return;
+    }
+  }
+
+  // 2. Real URL / Direct link networks (Monetag, OnClickA, Adsterra, Telega, etc.)
+  const activeNets = window.ACTIVE_AD_NETWORKS || {};
+  const activeKeys = Object.keys(activeNets);
+  for (const net of activeKeys) {
+    if (net === 'adsgram') continue;
+    const cfg = activeNets[net];
+    const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
+    if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
+      currentAdNetwork = net;
+      const targetUrl = adUrl.includes('{user_id}')
+        ? adUrl.replace('{user_id}', encodeURIComponent(player.id))
+        : `${adUrl}${adUrl.includes('?') ? '&' : '?'}user_id=${encodeURIComponent(player.id)}`;
+
+      toast(`Opening verified ad from ${net.toUpperCase()}...`);
+      try {
+        if (tg?.openLink) tg.openLink(targetUrl);
+        else window.open(targetUrl, '_blank');
+      } catch {
+        window.open(targetUrl, '_blank');
+      }
       return;
     }
   }
@@ -1868,75 +1895,8 @@ function openAdPlayer() {
   toast('⚠️ Real ad network configuration pending. Stars are only awarded for real completed ads.');
 }
 
-function showcaseAdPlayer() {
-  const sponsor = SPONSORS[Math.floor(Math.random() * SPONSORS.length)];
-  currentAdNetwork = sponsor.network || 'adsgram';
-
-  $('ad-showcase-icon').textContent = sponsor.icon;
-  $('ad-showcase-title').textContent = sponsor.title;
-  $('ad-showcase-desc').textContent = sponsor.desc;
-  const tagEl = document.querySelector('.ad-sponsor-badge');
-  if (tagEl) tagEl.innerHTML = `<span class="status-pulse"></span> ${sponsor.tag || 'SPONSOR SHOWCASE'}`;
-
-  const ctaBtn = $('ad-showcase-cta');
-  if (ctaBtn) {
-    if (sponsor.url) {
-      ctaBtn.href = sponsor.url;
-      ctaBtn.textContent = `Launch ${sponsor.title} ↗`;
-      ctaBtn.style.display = 'inline-flex';
-      ctaBtn.onclick = (e) => {
-        if (tg?.openTelegramLink && sponsor.url.startsWith('https://t.me/')) {
-          e.preventDefault();
-          tg.openTelegramLink(sponsor.url);
-        }
-      };
-    } else {
-      ctaBtn.style.display = 'none';
-    }
-  }
-
-  adWatchRemaining = 15;
-  $('ad-timer-badge').textContent = '15s';
-  $('ad-progress-bar').style.width = '0%';
-  $('ad-claim-btn').disabled = true;
-  $('ad-claim-btn').textContent = 'Watching Sponsor Ad (15s)...';
-  $('ad-player-status').textContent = `Please watch the full 15 seconds to receive your 1 ⭐ Star (${sponsor.title}).`;
-  $('ad-cancel-btn').style.display = 'block';
-
-  $('ad-player-dialog').showModal();
-
-  const totalDuration = 15;
-  const startStamp = Date.now();
-  clearInterval(adTimerInterval);
-
-  adTimerInterval = setInterval(() => {
-    const elapsed = (Date.now() - startStamp) / 1000;
-    const remaining = Math.max(0, totalDuration - elapsed);
-    adWatchRemaining = Math.ceil(remaining);
-
-    const progressPercent = Math.min(100, (elapsed / totalDuration) * 100);
-    $('ad-progress-bar').style.width = `${progressPercent}%`;
-    $('ad-timer-badge').textContent = `${adWatchRemaining}s`;
-
-    if (remaining <= 0) {
-      clearInterval(adTimerInterval);
-      $('ad-progress-bar').style.width = '100%';
-      $('ad-timer-badge').textContent = 'DONE ✓';
-      $('ad-claim-btn').disabled = false;
-      $('ad-claim-btn').textContent = 'Claim 1 ⭐ Star Now!';
-      $('ad-player-status').textContent = `🎉 ${sponsor.title} finished! Tap below to claim your Star.`;
-      $('ad-cancel-btn').style.display = 'none';
-      try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
-    }
-  }, 100);
-}
-
 function closeAdPlayer(rewarded = false) {
-  clearInterval(adTimerInterval);
-  try { $('ad-player-dialog').close(); } catch {}
-  if (!rewarded && adWatchRemaining > 0) {
-    toast('Ad was closed early. 0 Stars awarded.');
-  }
+  try { $('ad-player-dialog')?.close(); } catch {}
 }
 
 async function claimAdReward() {
