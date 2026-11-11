@@ -2180,7 +2180,13 @@ async function playAdexiumAd() {
 
 async function playGigaPubAd() {
   toast('Loading sponsor ad from GigaPub...');
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    if (typeof window.showGiga !== 'function') {
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (typeof window.showGiga === 'function') break;
+      }
+    }
     if (typeof window.showGiga !== 'function') {
       return reject(new Error('GigaPub SDK not available'));
     }
@@ -2190,7 +2196,7 @@ async function playGigaPubAd() {
         resolved = true;
         reject(new Error('GigaPub ad load timeout'));
       }
-    }, 10000);
+    }, 12000);
 
     window.showGiga()
       .then(async () => {
@@ -2498,7 +2504,7 @@ async function openAdPlayer() {
 
   // 7. Septenary: GigaPub Telegram Ad Network (App ID: 9103)
   const gigaAppId = window.GIGAPUB_APP_ID || '9103';
-  if (gigaAppId && typeof window.showGiga === 'function') {
+  if (gigaAppId) {
     try {
       await playGigaPubAd();
       return;
@@ -2531,7 +2537,7 @@ async function openAdPlayer() {
     }
   }
 
-  toast('No ad fill available right now from AdsGram, Monetag, OnClickA, or RichAds. Please try again in a few moments.');
+  toast('No ad fill available right now from sponsored ad networks. Please try again in a few moments.');
 }
 
 function closeAdPlayer(rewarded = false) {
