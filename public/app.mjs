@@ -1753,32 +1753,66 @@ async function refreshPoolData() {
   updateCountdownClocks();
 }
 
+const hasLiveAds = () => Boolean(window.ADSGRAM_BLOCK_ID || window.MONETAG_ZONE_ID || window.LIVE_ADS_ACTIVE);
+
 function updateCooldownDisplay() {
-  const ready = currentCooldown <= 0 && (poolData.adsWatchedToday < 20);
+  const live = hasLiveAds();
   const isCapped = poolData.adsWatchedToday >= 20;
+  const ready = live && !isCapped && currentCooldown <= 0;
 
-  if ($('pool-ad-status-chip')) {
-    $('pool-ad-status-chip').textContent = isCapped ? 'DAILY CAP' : (ready ? 'READY' : 'COOLDOWN');
-    $('pool-ad-status-chip').className = `soft-chip ${ready ? 'live' : ''}`;
-  }
-  if ($('arena-ad-status-chip')) {
-    $('arena-ad-status-chip').textContent = isCapped ? 'DAILY CAP' : (ready ? 'READY' : 'COOLDOWN');
-    $('arena-ad-status-chip').className = `soft-chip ${ready ? 'live' : ''}`;
+  const poolChip = $('pool-ad-status-chip');
+  if (poolChip) {
+    if (!live) {
+      poolChip.textContent = 'NO ADS ACTIVE';
+      poolChip.className = 'soft-chip locked';
+    } else if (isCapped) {
+      poolChip.textContent = 'DAILY LIMIT REACHED';
+      poolChip.className = 'soft-chip';
+    } else if (currentCooldown > 0) {
+      poolChip.textContent = `COOLDOWN (${currentCooldown}S)`;
+      poolChip.className = 'soft-chip';
+    } else {
+      poolChip.textContent = 'READY';
+      poolChip.className = 'soft-chip live';
+    }
   }
 
-  const cooldownText = isCapped ? '20/20 Daily Limit Reached' : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : 'Ready to watch');
+  const arenaChip = $('arena-ad-status-chip');
+  if (arenaChip) {
+    if (!live) {
+      arenaChip.textContent = 'NO ADS ACTIVE';
+      arenaChip.className = 'soft-chip locked';
+    } else if (isCapped) {
+      arenaChip.textContent = 'DAILY LIMIT';
+      arenaChip.className = 'soft-chip';
+    } else if (currentCooldown > 0) {
+      arenaChip.textContent = `COOLDOWN (${currentCooldown}S)`;
+      arenaChip.className = 'soft-chip';
+    } else {
+      arenaChip.textContent = 'READY';
+      arenaChip.className = 'soft-chip live';
+    }
+  }
+
+  const cooldownText = !live
+    ? 'Real sponsor ads opening soon. Stars are only awarded for real completed sponsor ads.'
+    : (isCapped ? 'Daily limit reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday!'));
+
   if ($('pool-cooldown-text')) $('pool-cooldown-text').textContent = cooldownText;
-  if ($('sidebar-cooldown-text')) $('sidebar-cooldown-text').textContent = cooldownText;
-  if ($('arena-cooldown-text')) $('arena-cooldown-text').textContent = isCapped ? 'Daily cap reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Ad cooldown active: next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown.');
+  if ($('sidebar-cooldown-text')) $('sidebar-cooldown-text').textContent = !live ? 'Opening soon' : cooldownText;
+  if ($('arena-cooldown-text')) $('arena-cooldown-text').textContent = !live ? 'No active sponsor ads right now. Stars are strictly awarded for real completed sponsor ads.' : (isCapped ? 'Daily cap reached (20/20). Next round resets at 00:00 UTC.' : (currentCooldown > 0 ? `Ad cooldown active: next ad ready in ${currentCooldown}s` : '1 completed ad = 1 Star. Convert into USDT every Friday! 60s cooldown.'));
 
-  const btnText = isCapped ? 'Daily Limit Reached (20/20)' : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)');
+  const btnText = !live
+    ? '⏸ No Ads Available Right Now'
+    : (isCapped ? 'Daily Limit Reached (20/20)' : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)'));
+
   if ($('pool-watch-ad-btn')) {
     $('pool-watch-ad-btn').disabled = !ready;
     $('pool-watch-ad-btn').textContent = btnText;
   }
   if ($('sidebar-watch-ad-btn')) {
     $('sidebar-watch-ad-btn').disabled = !ready;
-    $('sidebar-watch-ad-btn').textContent = isCapped ? 'Daily Cap (20/20)' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)');
+    $('sidebar-watch-ad-btn').textContent = !live ? 'No Ads Available' : (isCapped ? 'Daily Cap (20/20)' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)'));
   }
   if ($('arena-watch-ad-btn')) {
     $('arena-watch-ad-btn').disabled = !ready;
@@ -1801,6 +1835,10 @@ function startCooldownTimer(seconds = 60) {
 }
 
 function openAdPlayer() {
+  if (!hasLiveAds()) {
+    toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks go live.');
+    return;
+  }
   if (currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
     return;
@@ -1820,14 +1858,14 @@ function openAdPlayer() {
           await claimAdReward();
         }
       }).catch((err) => {
-        console.warn('AdsGram skipped or failed, fallback to showcase:', err);
-        showcaseAdPlayer();
+        console.warn('AdsGram ad error:', err);
+        toast('Ad was not completed. 0 Stars awarded.');
       });
       return;
     }
   }
 
-  showcaseAdPlayer();
+  toast('⚠️ Real ad network configuration pending. Stars are only awarded for real completed ads.');
 }
 
 function showcaseAdPlayer() {
@@ -1919,12 +1957,8 @@ async function claimAdReward() {
       startCooldownTimer(res.cooldownSeconds || 60);
       toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
     } else {
-      player.stars = (player.stars || 0) + 1;
-      player.weeklyStars = (player.weeklyStars || 0) + 1;
-      poolData.adsWatchedToday = (poolData.adsWatchedToday || 0) + 1;
-      storeGuest();
-      startCooldownTimer(60);
-      toast(`🎉 +1 ⭐ Star credited! (In Telegram, stars convert into real USDT every Friday)`);
+      toast('⚠️ Guest practice mode cannot earn stars. Stars are only awarded for real completed sponsor ads in Telegram.');
+      return;
     }
 
     closeAdPlayer(true);
@@ -2295,6 +2329,13 @@ async function boot() {
     player.streak = localStreak();
     applyTheme(player.equippedTheme);
     storeGuest();
+    try {
+      const stored = read('ms_demo_player_v2', {});
+      stored.stars = 0;
+      stored.weeklyStars = 0;
+      stored.usdtBalance = 0.0;
+      localStorage.setItem('ms_demo_player_v2', JSON.stringify(stored));
+    } catch {}
   }
 
   const urlParamGame = new URLSearchParams(window.location.search).get('game');
