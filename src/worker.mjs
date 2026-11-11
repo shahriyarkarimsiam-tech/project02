@@ -5,6 +5,15 @@ import { replayMemory, coinsForMemoryScore } from '../public/memory-engine.mjs';
 import { replayViper, coinsForViperScore } from '../public/viper-engine.mjs';
 import { THEMES } from '../public/catalog.mjs';
 import { validateTelegramInitData, mintSession, verifySession, getCookie } from './auth.mjs';
+import {
+  currentWeekId,
+  weekEndTimestamp,
+  calcStarValue,
+  calcUserShare,
+  REVENUE_SHARE_RATIO,
+  DAILY_AD_CAP,
+  MIN_WITHDRAWAL_USDT
+} from './pool.mjs';
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const DAY = 86400;
@@ -47,7 +56,18 @@ function currentStreak(days) {
 }
 async function userProfile(env, uid) {
   const [player, themed, active, days, recent, daily] = await Promise.all([
-    env.DB.prepare('SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile, games_played AS gamesPlayed, equipped_theme AS equippedTheme, COALESCE(best_blocks_score, 0) AS bestBlocksScore, COALESCE(best_cascade_score, 0) AS bestCascadeScore, COALESCE(best_memory_score, 0) AS bestMemoryScore, COALESCE(best_viper_score, 0) AS bestViperScore FROM players WHERE id=?').bind(uid).first(),
+    env.DB.prepare(`SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile,
+      games_played AS gamesPlayed, equipped_theme AS equippedTheme,
+      COALESCE(best_blocks_score, 0) AS bestBlocksScore,
+      COALESCE(best_cascade_score, 0) AS bestCascadeScore,
+      COALESCE(best_memory_score, 0) AS bestMemoryScore,
+      COALESCE(best_viper_score, 0) AS bestViperScore,
+      COALESCE(stars, 0) AS stars,
+      COALESCE(weekly_stars, 0) AS weeklyStars,
+      COALESCE(usdt_balance, 0.0) AS usdtBalance,
+      COALESCE(last_ad_at, 0) AS lastAdAt,
+      payout_wallet AS payoutWallet
+      FROM players WHERE id=?`).bind(uid).first(),
     env.DB.prepare('SELECT theme_id AS id FROM player_themes WHERE player_id=?').bind(uid).all(),
     env.DB.prepare('SELECT id, seed, mode, COALESCE(game_type, "merge") AS gameType, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
     env.DB.prepare("SELECT DISTINCT date(finished_at,'unixepoch') AS day FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY day DESC LIMIT 40").bind(uid).all(),
@@ -57,6 +77,7 @@ async function userProfile(env, uid) {
   if (!player) return null;
   return { player: { ...player, streak: currentStreak((days.results||[]).map(d=>d.day)), ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)] }, activeRuns: active.results||[], recentGames: recent.results||[], daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null } };
 }
+
 async function handleTelegramWebhook(request, env) {
   if (!env.BOT_TOKEN) return json({ ok: false, error: 'No bot token' });
   try {
@@ -72,7 +93,7 @@ async function handleTelegramWebhook(request, env) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n👇 Tap below to start playing:`,
+        text: `👋 Hello *${firstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n👇 Tap below to start playing:`,
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
@@ -92,7 +113,7 @@ async function handleTelegramWebhook(request, env) {
               { text: '🐍 Play Neon Viper', web_app: { url: `${appUrl}?game=viper` } }
             ],
             [
-              { text: '⚡ Daily Challenge', web_app: { url: `${appUrl}?mode=daily` } }
+              { text: '⭐ Weekly Revenue Pool', web_app: { url: `${appUrl}?view=pool` } }
             ]
           ]
         }
@@ -104,6 +125,54 @@ async function handleTelegramWebhook(request, env) {
   return json({ ok: true });
 }
 
+async function handleAdPostback(request, env) {
+  if (!env.DB) return fail(503, 'Database unavailable');
+  const url = new URL(request.url);
+  let uid, network, secret;
+  if (request.method === 'POST') {
+    const input = await bodyJSON(request).catch(() => ({}));
+    uid = input.user_id || input.subid || input.uid;
+    network = input.network || 'adsgram';
+    secret = input.secret;
+  } else {
+    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid');
+    network = url.searchParams.get('network') || 'monetag';
+    secret = url.searchParams.get('secret');
+  }
+  if (!uid) return fail(400, 'Missing user_id parameter');
+  if (env.POSTBACK_SECRET && secret !== env.POSTBACK_SECRET) {
+    return fail(403, 'Invalid postback secret');
+  }
+  const player = await env.DB.prepare('SELECT id, stars, weekly_stars, last_ad_at FROM players WHERE id=?').bind(uid).first();
+  if (!player) return fail(404, 'Player not found');
+
+  const stamp = now();
+  const weekId = currentWeekId();
+  const impressionId = crypto.randomUUID();
+  const adRevenue = 0.02;
+  const communityShare = 0.01;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      'INSERT INTO ad_impressions (id, player_id, ad_network, week_id, completed_at, reward_stars) VALUES (?, ?, ?, ?, ?, 1)'
+    ).bind(impressionId, uid, network, weekId, stamp),
+    env.DB.prepare(
+      'UPDATE players SET stars = COALESCE(stars, 0) + 1, weekly_stars = COALESCE(weekly_stars, 0) + 1, last_ad_at = ? WHERE id = ?'
+    ).bind(stamp, uid),
+    env.DB.prepare(`
+      INSERT INTO weekly_pools (week_id, total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status)
+      VALUES (?, 1, ?, ?, ?, 'active')
+      ON CONFLICT(week_id) DO UPDATE SET
+        total_stars = total_stars + 1,
+        total_revenue_usdt = total_revenue_usdt + excluded.total_revenue_usdt,
+        community_pool_usdt = community_pool_usdt + excluded.community_pool_usdt,
+        value_per_star = (community_pool_usdt + excluded.community_pool_usdt) / (total_stars + 1)
+    `).bind(weekId, adRevenue, communityShare, communityShare)
+  ]);
+
+  return json({ ok: true, user_id: uid, starsAwarded: 1 });
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -113,9 +182,12 @@ async function route(request, env) {
   if (method === 'POST' && path === '/api/telegram/webhook') {
     return handleTelegramWebhook(request, env);
   }
+  if (path === '/api/ads/postback') {
+    return handleAdPostback(request, env);
+  }
 
   if (method !== 'GET' && !originAllowed(request)) return fail(403, 'Invalid request origin');
-  if (method === 'GET' && path === '/api/health') return json({ ok:true, version:'0.2.0', adsEnabled:false, withdrawalsEnabled:false });
+  if (method === 'GET' && path === '/api/health') return json({ ok:true, version:'0.3.0', adsEnabled:true, withdrawalsEnabled:true });
 
   if (method === 'POST' && path === '/api/auth/telegram') {
     if (!env.BOT_TOKEN || !env.SESSION_SECRET || !env.DB) return fail(503, 'Server is not configured');
@@ -130,6 +202,7 @@ async function route(request, env) {
     const signed = await mintSession(person.id, env.SESSION_SECRET);
     return json({ ok:true, token: signed }, 200, { 'set-cookie':sameSiteCookie(signed) });
   }
+
   if (method === 'GET' && path === '/api/leaderboard') {
     if (!env.DB) return fail(503, 'Database unavailable');
     const rawGame = url.searchParams.get('game');
@@ -165,13 +238,204 @@ async function route(request, env) {
     const { results } = await query.all();
     return json({ game: gameType, mode: isDaily ? 'daily' : 'classic', day: isDaily ? todayUTC() : null, leaders: results || [] });
   }
+
   if (path.startsWith('/api/')) {
     const uid = await getUser(request,env);
     if (!uid) return fail(401, 'Open the app in Telegram to use online features');
+
     if (method==='GET' && path==='/api/me') {
       const data = await userProfile(env,uid);
       return data ? json(data) : fail(401,'Player account unavailable');
     }
+
+    if (method === 'GET' && path === '/api/ads/pool') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const weekId = currentWeekId();
+      const endsAt = weekEndTimestamp();
+      const [player, pool, ads24h] = await Promise.all([
+        env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at, payout_wallet FROM players WHERE id=?').bind(uid).first(),
+        env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status FROM weekly_pools WHERE week_id=?').bind(weekId).first(),
+        env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, now() - DAY).first()
+      ]);
+
+      const communityTotalStars = pool?.total_stars || 0;
+      const communityPoolUsdt = pool?.community_pool_usdt || 0.0;
+      const valuePerStar = calcStarValue(communityPoolUsdt, communityTotalStars);
+      const userWeeklyStars = player?.weekly_stars || 0;
+      const userTotalStars = player?.stars || 0;
+      const userEstimatedShareUsdt = calcUserShare(userWeeklyStars, valuePerStar);
+      const userUsdtBalance = player?.usdt_balance || 0.0;
+      const adsWatchedToday = ads24h?.count || 0;
+      const cooldownRemaining = Math.max(0, 60 - (now() - (player?.last_ad_at || 0)));
+
+      return json({
+        weekId,
+        endsAt,
+        communityTotalStars,
+        communityPoolUsdt,
+        estimatedValuePerStar: valuePerStar,
+        userWeeklyStars,
+        userTotalStars,
+        userEstimatedShareUsdt,
+        userUsdtBalance,
+        adsWatchedToday,
+        dailyCap: DAILY_AD_CAP,
+        cooldownSecondsRemaining: cooldownRemaining,
+        minWithdrawalUsdt: MIN_WITHDRAWAL_USDT,
+        payoutWallet: player?.payout_wallet || null
+      });
+    }
+
+    if (method === 'POST' && path === '/api/ads/claim') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const player = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at FROM players WHERE id=?').bind(uid).first();
+      if (!player) return fail(404, 'Player not found');
+
+      const stamp = now();
+      const lastAd = player.last_ad_at || 0;
+      if (lastAd && stamp - lastAd < 55) {
+        const remaining = Math.max(1, 60 - (stamp - lastAd));
+        return fail(429, `Ad cooldown active. Please wait ${remaining}s before watching another ad.`);
+      }
+
+      const dailyAds = await env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, stamp - DAY).first();
+      const adsToday = dailyAds?.count || 0;
+      if (adsToday >= DAILY_AD_CAP) {
+        return fail(429, 'Daily ad limit reached (20 ads / 24 hours). Come back tomorrow!');
+      }
+
+      const input = await bodyJSON(request).catch(() => ({}));
+      const adNetwork = ['direct', 'adsgram', 'monetag'].includes(input.network) ? input.network : 'direct';
+      const weekId = currentWeekId();
+      const impressionId = crypto.randomUUID();
+      const adRevenue = 0.02;
+      const communityShare = 0.01;
+
+      await env.DB.batch([
+        env.DB.prepare(
+          'INSERT INTO ad_impressions (id, player_id, ad_network, week_id, completed_at, reward_stars) VALUES (?, ?, ?, ?, ?, 1)'
+        ).bind(impressionId, uid, adNetwork, weekId, stamp),
+        env.DB.prepare(
+          'UPDATE players SET stars = COALESCE(stars, 0) + 1, weekly_stars = COALESCE(weekly_stars, 0) + 1, last_ad_at = ? WHERE id = ?'
+        ).bind(stamp, uid),
+        env.DB.prepare(`
+          INSERT INTO weekly_pools (week_id, total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status)
+          VALUES (?, 1, ?, ?, ?, 'active')
+          ON CONFLICT(week_id) DO UPDATE SET
+            total_stars = total_stars + 1,
+            total_revenue_usdt = total_revenue_usdt + excluded.total_revenue_usdt,
+            community_pool_usdt = community_pool_usdt + excluded.community_pool_usdt,
+            value_per_star = (community_pool_usdt + excluded.community_pool_usdt) / (total_stars + 1)
+        `).bind(weekId, adRevenue, communityShare, communityShare)
+      ]);
+
+      const updated = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance FROM players WHERE id=?').bind(uid).first();
+      return json({
+        ok: true,
+        rewardStars: 1,
+        stars: updated.stars,
+        weeklyStars: updated.weekly_stars,
+        adsToday: adsToday + 1,
+        dailyCap: DAILY_AD_CAP,
+        cooldownSeconds: 60
+      });
+    }
+
+    if (method === 'POST' && path === '/api/wallet/withdraw') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const input = await bodyJSON(request);
+      const amount = Number(input.amount);
+      const network = String(input.network || '').toUpperCase();
+      const address = String(input.address || '').trim();
+
+      if (!['TON', 'TRC20'].includes(network)) {
+        return fail(400, 'Invalid network. Supported payout networks: TON, TRC20');
+      }
+      if (!address || address.length < 10 || address.length > 100) {
+        return fail(400, 'Please enter a valid wallet address (10-100 characters)');
+      }
+      if (isNaN(amount) || amount < MIN_WITHDRAWAL_USDT) {
+        return fail(400, `Minimum withdrawal amount is $${MIN_WITHDRAWAL_USDT.toFixed(2)} USDT`);
+      }
+
+      const player = await env.DB.prepare('SELECT usdt_balance FROM players WHERE id=?').bind(uid).first();
+      if (!player || (player.usdt_balance || 0) < amount) {
+        return fail(400, 'Insufficient USDT balance');
+      }
+
+      const reqId = crypto.randomUUID();
+      const stamp = now();
+
+      await env.DB.batch([
+        env.DB.prepare(
+          'UPDATE players SET usdt_balance = usdt_balance - ?, payout_wallet = ? WHERE id = ?'
+        ).bind(amount, address, uid),
+        env.DB.prepare(
+          'INSERT INTO withdrawal_requests (id, player_id, amount_usdt, network, wallet_address, status, requested_at) VALUES (?, ?, ?, ?, ?, "pending", ?)'
+        ).bind(reqId, uid, amount, network, address, stamp)
+      ]);
+
+      const updated = await env.DB.prepare('SELECT usdt_balance FROM players WHERE id=?').bind(uid).first();
+      return json({
+        ok: true,
+        requestId: reqId,
+        amount,
+        network,
+        address,
+        remainingBalance: updated.usdt_balance,
+        status: 'pending'
+      });
+    }
+
+    if (method === 'POST' && path === '/api/admin/settle-week') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = env.ADMIN_TELEGRAM_ID && uid === String(env.ADMIN_TELEGRAM_ID);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const input = await bodyJSON(request);
+      const targetWeekId = input.weekId || currentWeekId();
+      const totalRevenue = Number(input.adRevenueUsdt);
+      if (isNaN(totalRevenue) || totalRevenue < 0) {
+        return fail(400, 'Invalid adRevenueUsdt amount');
+      }
+
+      const communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+      const poolRow = await env.DB.prepare('SELECT total_stars FROM weekly_pools WHERE week_id=?').bind(targetWeekId).first();
+      const totalStars = poolRow?.total_stars || 0;
+      const valuePerStar = calcStarValue(communityPool, totalStars);
+      const stamp = now();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO weekly_pools (week_id, total_revenue_usdt, community_pool_usdt, total_stars, value_per_star, status, settled_at)
+          VALUES (?, ?, ?, ?, ?, 'settled', ?)
+          ON CONFLICT(week_id) DO UPDATE SET
+            total_revenue_usdt = excluded.total_revenue_usdt,
+            community_pool_usdt = excluded.community_pool_usdt,
+            value_per_star = excluded.value_per_star,
+            status = 'settled',
+            settled_at = excluded.settled_at
+        `).bind(targetWeekId, totalRevenue, communityPool, totalStars, valuePerStar, stamp),
+        env.DB.prepare(`
+          UPDATE players
+          SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
+              weekly_stars = 0
+          WHERE weekly_stars > 0
+        `).bind(valuePerStar)
+      ]);
+
+      return json({
+        ok: true,
+        weekId: targetWeekId,
+        totalRevenueUsdt: totalRevenue,
+        communityPoolUsdt: communityPool,
+        totalStars,
+        valuePerStar,
+        settledAt: stamp
+      });
+    }
+
     if (method==='POST' && path==='/api/game/start') {
       const input = await bodyJSON(request);
       const rawGame = input.game;
@@ -200,6 +464,7 @@ async function route(request, env) {
       }
       return json({ id,seed,startedAt:stamp,mode,game:gameType,challengeDay:mode==='daily'?day:null },201);
     }
+
     if (method==='POST' && path==='/api/game/finish') {
       const input = await bodyJSON(request);
       if (typeof input.id!=='string'|| !/^[0-9a-f-]{36}$/.test(input.id)) return fail(400,'Invalid game ID');
@@ -278,9 +543,10 @@ async function route(request, env) {
         WHERE id=? AND player_id=? AND finished_at IS NULL RETURNING id`)
         .bind(now(),verifiedScore,input.moves.length,coins,bestTile,input.id,uid).first();
       if (!completed) return fail(409,'Game already saved');
-      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed,COALESCE(best_blocks_score,0) AS bestBlocksScore,COALESCE(best_cascade_score,0) AS bestCascadeScore,COALESCE(best_memory_score,0) AS bestMemoryScore,COALESCE(best_viper_score,0) AS bestViperScore FROM players WHERE id=?').bind(uid).first();
+      const profile=await env.DB.prepare('SELECT coins,best_score AS bestScore,best_tile AS bestTile,games_played AS gamesPlayed,COALESCE(best_blocks_score,0) AS bestBlocksScore,COALESCE(best_cascade_score,0) AS bestCascadeScore,COALESCE(best_memory_score,0) AS bestMemoryScore,COALESCE(best_viper_score,0) AS bestViperScore,COALESCE(stars,0) AS stars,COALESCE(weekly_stars,0) AS weeklyStars,COALESCE(usdt_balance,0.0) AS usdtBalance FROM players WHERE id=?').bind(uid).first();
       return json({ saved:true, score:verifiedScore, coinsAwarded:coins, mode:game.mode, game:game.gameType, ...profile });
     }
+
     if (method==='POST' && path==='/api/shop/buy') {
       const input=await bodyJSON(request);
       const theme=THEMES.find(x=>x.id===input.themeId);
@@ -298,6 +564,7 @@ async function route(request, env) {
       const balance=await env.DB.prepare('SELECT coins FROM players WHERE id=?').bind(uid).first();
       return json({ purchased:theme.id, coins:balance.coins });
     }
+
     if (method==='POST' && path==='/api/shop/equip') {
       const input=await bodyJSON(request), theme=THEMES.find(x=>x.id===input.themeId);
       if (!theme) return fail(400,'Unknown theme');
@@ -308,6 +575,7 @@ async function route(request, env) {
       await env.DB.prepare('UPDATE players SET equipped_theme=? WHERE id=?').bind(theme.id,uid).run();
       return json({ equippedTheme:theme.id });
     }
+
     if (method==='GET' && path==='/api/admin/metrics') {
       if (!env.ADMIN_TELEGRAM_ID || uid!==String(env.ADMIN_TELEGRAM_ID)) return fail(403,'Not authorized');
       const [players,dau,starts,finishes,recent,dailyEntries] = await Promise.all([
@@ -320,10 +588,12 @@ async function route(request, env) {
       ]);
       return json({ registeredPlayers:players.count,dailyActivePlayersUTC:dau.count,startsLast24h:starts.count,completedLast24h:finishes.count,completedDailyChallengesUTC:dailyEntries.count,averageCompletedScoreLast24h:Math.round(recent.avgScore),adRevenueUSD:null });
     }
+
     return fail(404,'API route not found');
   }
   return env.ASSETS.fetch(request);
 }
+
 export default { async fetch(request,env) {
   try { return await route(request,env); }
   catch(err) { console.error('Request failed:',err?.message||err); return fail(500,'Unexpected server error'); }

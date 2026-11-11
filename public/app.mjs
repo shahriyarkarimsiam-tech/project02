@@ -10,9 +10,9 @@ const tg = window.Telegram?.WebApp;
 const dateUTC = () => new Date().toISOString().slice(0, 10);
 const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
-const names = { home: 'Overview', play: 'Play game', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
+const names = { home: 'Overview', play: 'Play game', pool: 'Weekly Pool', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'] });
+const emptyPlayer = () => ({ id: 'demo', name: 'Guest player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '' });
 
 let player = emptyPlayer(), online = false, view = 'home';
 let activeGame = 'merge'; // 'merge' | 'blocks' | 'cascade' | 'memory' | 'viper'
@@ -103,6 +103,7 @@ function setView(next) {
     if (node.classList.contains('nav-button')) node.setAttribute('aria-current', node.dataset.viewTarget === next ? 'page' : 'false');
   });
   $('page-crumb').textContent = names[next];
+  if (next === 'pool') refreshPoolData();
   if (next === 'rankings') refreshLeaderboard();
   if (next === 'shop') renderShop();
   if (next === 'challenges') renderBadges();
@@ -131,6 +132,8 @@ function updateDailyUI() {
 function renderProfileBase() {
   $('coin-count').textContent = num(player.coins);
   $('shop-balance').textContent = num(player.coins);
+  if ($('top-stars')) $('top-stars').textContent = num(player.stars || 0);
+  if ($('top-usdt')) $('top-usdt').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
   $('profile-avatar').textContent = avatar();
   $('player-avatar').textContent = avatar();
   $('profile-big-avatar').textContent = avatar();
@@ -1556,6 +1559,301 @@ async function authenticate() {
   }
 }
 
+// ============================================================================
+// WEEKLY AD REVENUE SHARE POOL & 15-SECOND REWARDED AD SYSTEM
+// ============================================================================
+
+const SPONSORS = [
+  { icon: '⚡', title: 'CryptoPulse Pro', desc: 'Real-time Telegram market signals, automated trading bot and multi-chain tracking in one app.' },
+  { icon: '💎', title: 'TonGems Hub', desc: 'Discover trending Jettons, NFT collections, and decentralized staking on The Open Network.' },
+  { icon: '🛡️', title: 'ShieldVPN Web3', desc: 'Ultra-fast, private, zero-log decentralized VPN for Telegram Mini Apps and browsing.' },
+  { icon: '🚀', title: 'StarLaunch Pad', desc: 'The leading community token launchpad with verified audits and instant Telegram alerts.' }
+];
+
+let poolData = {
+  weekId: '2026-W46',
+  endsAt: Math.floor(Date.now() / 1000) + 345600,
+  communityTotalStars: 0,
+  communityPoolUsdt: 0.0,
+  estimatedValuePerStar: 0.0,
+  userWeeklyStars: 0,
+  userTotalStars: 0,
+  userEstimatedShareUsdt: 0.0,
+  userUsdtBalance: 0.0,
+  adsWatchedToday: 0,
+  dailyCap: 20,
+  cooldownSecondsRemaining: 0,
+  minWithdrawalUsdt: 1.00,
+  payoutWallet: ''
+};
+
+let adTimerInterval = null;
+let adWatchRemaining = 15;
+let currentCooldown = 0;
+let cooldownInterval = null;
+
+function updateCountdownClocks() {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const diff = Math.max(0, (poolData.endsAt || (nowSec + 345600)) - nowSec);
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  const seconds = diff % 60;
+  const timeStr = `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+
+  if ($('pool-countdown')) $('pool-countdown').textContent = timeStr;
+  if ($('home-pool-countdown')) $('home-pool-countdown').textContent = `${days}d ${hours}h`;
+}
+
+async function refreshPoolData() {
+  if (online) {
+    try {
+      const res = await api('/ads/pool');
+      poolData = { ...poolData, ...res };
+      player.stars = res.userTotalStars;
+      player.weeklyStars = res.userWeeklyStars;
+      player.usdtBalance = res.userUsdtBalance;
+      if (res.payoutWallet && !player.payoutWallet) player.payoutWallet = res.payoutWallet;
+      currentCooldown = res.cooldownSecondsRemaining || 0;
+    } catch (err) {
+      console.warn('Failed to refresh pool data:', err);
+    }
+  } else {
+    const guestStars = Number(player.stars || 0);
+    const guestWeekly = Number(player.weeklyStars || 0);
+    const guestBalance = Number(player.usdtBalance || 0);
+    poolData.communityTotalStars = 12500 + guestWeekly;
+    poolData.communityPoolUsdt = 125.00 + (guestWeekly * 0.01);
+    poolData.estimatedValuePerStar = poolData.communityTotalStars > 0 ? (poolData.communityPoolUsdt / poolData.communityTotalStars) : 0.01;
+    poolData.userWeeklyStars = guestWeekly;
+    poolData.userTotalStars = guestStars;
+    poolData.userEstimatedShareUsdt = guestWeekly * poolData.estimatedValuePerStar;
+    poolData.userUsdtBalance = guestBalance;
+  }
+
+  if ($('top-stars')) $('top-stars').textContent = num(player.stars || 0);
+  if ($('top-usdt')) $('top-usdt').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
+  if ($('home-pool-usdt')) $('home-pool-usdt').textContent = `$${Number(poolData.communityPoolUsdt || 0).toFixed(2)}`;
+
+  if ($('pool-community-usdt')) $('pool-community-usdt').textContent = `$${Number(poolData.communityPoolUsdt || 0).toFixed(2)}`;
+  if ($('pool-community-stars')) $('pool-community-stars').textContent = num(poolData.communityTotalStars || 0);
+  if ($('pool-star-value')) $('pool-star-value').textContent = `$${Number(poolData.estimatedValuePerStar || 0).toFixed(4)}`;
+
+  if ($('pool-user-weekly-stars')) $('pool-user-weekly-stars').textContent = num(player.weeklyStars || 0);
+  if ($('pool-user-share-usdt')) $('pool-user-share-usdt').textContent = `$${Number(poolData.userEstimatedShareUsdt || (player.weeklyStars * poolData.estimatedValuePerStar) || 0).toFixed(2)}`;
+  if ($('pool-user-total-stars')) $('pool-user-total-stars').textContent = num(player.stars || 0);
+
+  if ($('wallet-usdt-balance')) $('wallet-usdt-balance').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
+  if ($('pool-daily-count')) $('pool-daily-count').textContent = `${poolData.adsWatchedToday || 0} / 20 ads watched today`;
+
+  if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
+    $('wallet-address-input').value = poolData.payoutWallet || player.payoutWallet;
+  }
+
+  updateCooldownDisplay();
+  updateCountdownClocks();
+}
+
+function updateCooldownDisplay() {
+  const ready = currentCooldown <= 0 && (poolData.adsWatchedToday < 20);
+  const isCapped = poolData.adsWatchedToday >= 20;
+
+  if ($('pool-ad-status-chip')) {
+    $('pool-ad-status-chip').textContent = isCapped ? 'DAILY CAP' : (ready ? 'READY' : 'COOLDOWN');
+    $('pool-ad-status-chip').className = `soft-chip ${ready ? 'live' : ''}`;
+  }
+
+  const cooldownText = isCapped ? '20/20 Daily Limit Reached' : (currentCooldown > 0 ? `Next ad ready in ${currentCooldown}s` : 'Ready to watch');
+  if ($('pool-cooldown-text')) $('pool-cooldown-text').textContent = cooldownText;
+  if ($('sidebar-cooldown-text')) $('sidebar-cooldown-text').textContent = cooldownText;
+
+  const btnText = isCapped ? 'Daily Limit Reached (20/20)' : (currentCooldown > 0 ? `Cooldown (${currentCooldown}s)` : '▶ Watch Sponsor Ad (+1 ⭐)');
+  if ($('pool-watch-ad-btn')) {
+    $('pool-watch-ad-btn').disabled = !ready;
+    $('pool-watch-ad-btn').textContent = btnText;
+  }
+  if ($('sidebar-watch-ad-btn')) {
+    $('sidebar-watch-ad-btn').disabled = !ready;
+    $('sidebar-watch-ad-btn').textContent = isCapped ? 'Daily Cap (20/20)' : (currentCooldown > 0 ? `Wait ${currentCooldown}s` : 'Watch Ad (+1 ⭐)');
+  }
+}
+
+function startCooldownTimer(seconds = 60) {
+  currentCooldown = seconds;
+  clearInterval(cooldownInterval);
+  updateCooldownDisplay();
+  cooldownInterval = setInterval(() => {
+    currentCooldown--;
+    if (currentCooldown <= 0) {
+      currentCooldown = 0;
+      clearInterval(cooldownInterval);
+    }
+    updateCooldownDisplay();
+  }, 1000);
+}
+
+function openAdPlayer() {
+  if (currentCooldown > 0) {
+    toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
+    return;
+  }
+  if (poolData.adsWatchedToday >= 20) {
+    toast('Daily limit reached (20 ads / 24 hours). Come back tomorrow!');
+    return;
+  }
+
+  const sponsor = SPONSORS[Math.floor(Math.random() * SPONSORS.length)];
+  $('ad-showcase-icon').textContent = sponsor.icon;
+  $('ad-showcase-title').textContent = sponsor.title;
+  $('ad-showcase-desc').textContent = sponsor.desc;
+
+  adWatchRemaining = 15;
+  $('ad-timer-badge').textContent = '15s';
+  $('ad-progress-bar').style.width = '0%';
+  $('ad-claim-btn').disabled = true;
+  $('ad-claim-btn').textContent = 'Watching Sponsor Ad (15s)...';
+  $('ad-player-status').textContent = 'Please watch the full 15 seconds to receive your 1 ⭐ Star.';
+  $('ad-cancel-btn').style.display = 'block';
+
+  $('ad-player-dialog').showModal();
+
+  const totalDuration = 15;
+  const startStamp = Date.now();
+  clearInterval(adTimerInterval);
+
+  adTimerInterval = setInterval(() => {
+    const elapsed = (Date.now() - startStamp) / 1000;
+    const remaining = Math.max(0, totalDuration - elapsed);
+    adWatchRemaining = Math.ceil(remaining);
+
+    const progressPercent = Math.min(100, (elapsed / totalDuration) * 100);
+    $('ad-progress-bar').style.width = `${progressPercent}%`;
+    $('ad-timer-badge').textContent = `${adWatchRemaining}s`;
+
+    if (remaining <= 0) {
+      clearInterval(adTimerInterval);
+      $('ad-progress-bar').style.width = '100%';
+      $('ad-timer-badge').textContent = 'DONE ✓';
+      $('ad-claim-btn').disabled = false;
+      $('ad-claim-btn').textContent = 'Claim 1 ⭐ Star Now!';
+      $('ad-player-status').textContent = '🎉 Sponsor showcase finished! Tap below to claim your Star.';
+      $('ad-cancel-btn').style.display = 'none';
+      try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
+    }
+  }, 100);
+}
+
+function closeAdPlayer(rewarded = false) {
+  clearInterval(adTimerInterval);
+  $('ad-player-dialog').close();
+  if (!rewarded && adWatchRemaining > 0) {
+    toast('Ad was closed early. 0 Stars awarded.');
+  }
+}
+
+async function claimAdReward() {
+  if ($('ad-claim-btn').disabled) return;
+  $('ad-claim-btn').disabled = true;
+  $('ad-claim-btn').textContent = 'Verifying reward...';
+
+  try {
+    if (online) {
+      const res = await api('/ads/claim', { method: 'POST', body: { network: 'direct' } });
+      player.stars = res.stars;
+      player.weeklyStars = res.weeklyStars;
+      poolData.adsWatchedToday = res.adsToday;
+      startCooldownTimer(res.cooldownSeconds || 60);
+    } else {
+      player.stars = (player.stars || 0) + 1;
+      player.weeklyStars = (player.weeklyStars || 0) + 1;
+      poolData.adsWatchedToday = (poolData.adsWatchedToday || 0) + 1;
+      storeGuest();
+      startCooldownTimer(60);
+    }
+
+    closeAdPlayer(true);
+    toast('🎉 Verified! +1 ⭐ Star credited to your weekly revenue share!');
+    try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
+    refreshPoolData();
+    renderProfileBase();
+  } catch (err) {
+    toast(err.message);
+    $('ad-claim-btn').disabled = false;
+    $('ad-claim-btn').textContent = 'Try Claiming Again';
+  }
+}
+
+async function submitWithdrawal() {
+  const network = $('wallet-network-select')?.value || 'TON';
+  const address = ($('wallet-address-input')?.value || '').trim();
+  const amount = Number($('wallet-amount-input')?.value);
+
+  const statusMsg = $('wallet-status-msg');
+  if (statusMsg) {
+    statusMsg.hidden = true;
+    statusMsg.className = 'pool-status-msg';
+  }
+
+  if (!address || address.length < 10) {
+    toast('Please enter a valid destination wallet address (10+ characters).');
+    $('wallet-address-input')?.focus();
+    return;
+  }
+  if (isNaN(amount) || amount < 1.00) {
+    toast('Minimum withdrawal amount is $1.00 USDT.');
+    $('wallet-amount-input')?.focus();
+    return;
+  }
+  if (amount > (player.usdtBalance || 0)) {
+    toast(`Insufficient balance. You have $${Number(player.usdtBalance || 0).toFixed(2)} USDT.`);
+    return;
+  }
+
+  const withdrawBtn = $('wallet-withdraw-btn');
+  if (withdrawBtn) {
+    withdrawBtn.disabled = true;
+    withdrawBtn.textContent = 'Submitting Request...';
+  }
+
+  try {
+    if (online) {
+      const res = await api('/wallet/withdraw', {
+        method: 'POST',
+        body: { network, address, amount }
+      });
+      player.usdtBalance = res.remainingBalance;
+      player.payoutWallet = address;
+    } else {
+      player.usdtBalance = Math.max(0, (player.usdtBalance || 0) - amount);
+      player.payoutWallet = address;
+      storeGuest();
+    }
+
+    if (statusMsg) {
+      statusMsg.hidden = false;
+      statusMsg.className = 'pool-status-msg success';
+      statusMsg.textContent = `✓ Payout request of $${amount.toFixed(2)} USDT submitted! Sent to ${address.slice(0, 8)}... (${network})`;
+    }
+    toast(`✓ Withdrawal request for $${amount.toFixed(2)} USDT received!`);
+    if ($('wallet-amount-input')) $('wallet-amount-input').value = '';
+
+    refreshPoolData();
+    renderProfileBase();
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.hidden = false;
+      statusMsg.className = 'pool-status-msg error';
+      statusMsg.textContent = `Failed: ${err.message}`;
+    }
+    toast(err.message);
+  } finally {
+    if (withdrawBtn) {
+      withdrawBtn.disabled = false;
+      withdrawBtn.textContent = 'Request USDT Withdrawal ↗';
+    }
+  }
+}
+
 async function boot() {
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
   $('today-label').textContent = new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
@@ -1570,6 +1868,7 @@ async function boot() {
 
   const urlParamGame = new URLSearchParams(window.location.search).get('game');
   const urlParamMode = new URLSearchParams(window.location.search).get('mode');
+  const urlParamView = new URLSearchParams(window.location.search).get('view');
 
   // Hydrate Merge Streak run
   const activeMerge = online ? activeRuns.find(run => run.mode === 'classic' && (run.gameType === 'merge' || !run.gameType)) : read('ms_demo_run_classic');
@@ -1627,8 +1926,12 @@ async function boot() {
   renderDashboard();
   renderShop();
   refreshLeaderboard();
+  refreshPoolData();
+  setInterval(updateCountdownClocks, 1000);
 
-  if (urlParamMode === 'daily') {
+  if (urlParamView === 'pool') {
+    setView('pool');
+  } else if (urlParamMode === 'daily') {
     switchGame('merge');
     launch('daily', false);
     setView('play');
@@ -1655,6 +1958,13 @@ async function boot() {
 // UI routing & Event Listeners
 for (const button of document.querySelectorAll('[data-view-target]')) {
   button.addEventListener('click', () => setView(button.dataset.viewTarget));
+}
+$('pool-watch-ad-btn')?.addEventListener('click', openAdPlayer);
+$('sidebar-watch-ad-btn')?.addEventListener('click', openAdPlayer);
+$('ad-claim-btn')?.addEventListener('click', claimAdReward);
+$('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
+$('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
+$('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
 }
 for (const button of document.querySelectorAll('[data-switch-game]')) {
   button.addEventListener('click', () => switchGame(button.dataset.switchGame));

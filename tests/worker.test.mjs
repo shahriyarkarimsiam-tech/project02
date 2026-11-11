@@ -1,22 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/worker.mjs';
+import { mintSession } from '../src/auth.mjs';
 
-test('health endpoint explicitly keeps monetization disabled', async () => {
+const SESSION_SECRET = 'test-session-secret-key-32-bytes-long';
+
+async function authHeader(uid = '1001') {
+  const token = await mintSession(uid, SESSION_SECRET);
+  return { authorization: `Bearer ${token}` };
+}
+
+test('health endpoint reports enabled monetization and pool', async () => {
   const result = await worker.fetch(new Request('https://example.com/api/health'), {});
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { ok: true, version: '0.2.0', adsEnabled: false, withdrawalsEnabled: false });
+  assert.deepEqual(await result.json(), { ok: true, version: '0.3.0', adsEnabled: true, withdrawalsEnabled: true });
 });
+
 test('private endpoints refuse requests without signed Telegram session', async () => {
-  const response = await worker.fetch(new Request('https://example.com/api/me'), { SESSION_SECRET: 'secret' });
+  const response = await worker.fetch(new Request('https://example.com/api/me'), { SESSION_SECRET });
   assert.equal(response.status, 401);
 });
+
 test('auth endpoint refuses cross-origin requests', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/auth/telegram', {
     method: 'POST', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' }, body: '{}'
   }), {});
   assert.equal(response.status, 403);
 });
+
 test('auth fails closed when secrets or D1 are missing', async () => {
   const response = await worker.fetch(new Request('https://example.com/api/auth/telegram', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
@@ -110,5 +121,277 @@ test('leaderboard returns viper leaders with mocked D1', async () => {
   assert.deepEqual(data.leaders, [{ name: 'Diana', score: 850 }]);
 });
 
+test('GET /api/ads/pool returns weekly pool data and user calculations', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM players')) {
+                return { stars: 50, weekly_stars: 20, usdt_balance: 1.50, last_ad_at: Math.floor(Date.now() / 1000) - 100, payout_wallet: 'UQTestWallet' };
+              }
+              if (query.includes('FROM weekly_pools')) {
+                return { total_stars: 1000, total_revenue_usdt: 20.0, community_pool_usdt: 10.0, value_per_star: 0.01, status: 'active' };
+              }
+              if (query.includes('FROM ad_impressions')) {
+                return { count: 5 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    }
+  };
 
+  const response = await worker.fetch(new Request('https://example.com/api/ads/pool', {
+    headers: { ...auth }
+  }), { DB: mockDB, SESSION_SECRET });
 
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert(data.weekId.startsWith('20'));
+  assert.equal(data.communityTotalStars, 1000);
+  assert.equal(data.communityPoolUsdt, 10.0);
+  assert.equal(data.estimatedValuePerStar, 0.01);
+  assert.equal(data.userWeeklyStars, 20);
+  assert.equal(data.userTotalStars, 50);
+  assert.equal(data.userEstimatedShareUsdt, 0.20);
+  assert.equal(data.userUsdtBalance, 1.50);
+  assert.equal(data.adsWatchedToday, 5);
+  assert.equal(data.dailyCap, 20);
+  assert.equal(data.cooldownSecondsRemaining, 0);
+  assert.equal(data.minWithdrawalUsdt, 1.00);
+  assert.equal(data.payoutWallet, 'UQTestWallet');
+});
+
+test('POST /api/ads/claim enforces 60s cooldown', async () => {
+  const auth = await authHeader('1001');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM players')) {
+                // last ad was 10 seconds ago -> cooldown still active
+                return { stars: 5, weekly_stars: 5, usdt_balance: 0, last_ad_at: nowSec - 10 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'direct' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 429);
+  const data = await response.json();
+  assert(data.error.includes('Ad cooldown active'));
+});
+
+test('POST /api/ads/claim enforces 20 ads per 24 hours daily cap', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM players')) {
+                return { stars: 20, weekly_stars: 20, usdt_balance: 0, last_ad_at: 0 };
+              }
+              if (query.includes('FROM ad_impressions')) {
+                return { count: 20 }; // reached daily cap
+              }
+              return null;
+            }
+          };
+        }
+      };
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'direct' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 429);
+  const data = await response.json();
+  assert(data.error.includes('Daily ad limit reached'));
+});
+
+test('POST /api/ads/claim successfully awards 1 star and records impression', async () => {
+  const auth = await authHeader('1001');
+  let batchCalled = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('SELECT stars, weekly_stars, usdt_balance, last_ad_at FROM players')) {
+                return { stars: 4, weekly_stars: 4, usdt_balance: 0, last_ad_at: 0 };
+              }
+              if (query.includes('SELECT COUNT(*) AS count FROM ad_impressions')) {
+                return { count: 2 };
+              }
+              if (query.includes('SELECT stars, weekly_stars, usdt_balance FROM players')) {
+                return { stars: 5, weekly_stars: 5, usdt_balance: 0 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 3);
+      batchCalled = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'direct' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.rewardStars, 1);
+  assert.equal(data.stars, 5);
+  assert.equal(data.weeklyStars, 5);
+  assert.equal(data.adsToday, 3);
+  assert(batchCalled);
+});
+
+test('POST /api/wallet/withdraw validates minimum amount and balance', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              return { usdt_balance: 0.50 }; // insufficient balance
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // Rejects below $1.00
+  const underMinResp = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 0.50, network: 'TON', address: 'UQTestAddress123456789' })
+  }), { DB: mockDB, SESSION_SECRET });
+  assert.equal(underMinResp.status, 400);
+
+  // Rejects when balance is less than requested amount
+  const overBalResp = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 2.00, network: 'TON', address: 'UQTestAddress123456789' })
+  }), { DB: mockDB, SESSION_SECRET });
+  assert.equal(overBalResp.status, 400);
+  const err = await overBalResp.json();
+  assert.equal(err.error, 'Insufficient USDT balance');
+});
+
+test('POST /api/wallet/withdraw processes valid withdrawal request', async () => {
+  const auth = await authHeader('1001');
+  let batchCalled = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('WHERE id=?')) {
+                return { usdt_balance: 5.00 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchCalled = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 2.50, network: 'TON', address: 'UQTestAddress123456789' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.amount, 2.50);
+  assert.equal(data.network, 'TON');
+  assert.equal(data.status, 'pending');
+  assert(batchCalled);
+});
+
+test('POST /api/admin/settle-week distributes 50% pool share', async () => {
+  const auth = await authHeader('9999'); // admin ID
+  let batchExecuted = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM weekly_pools')) {
+                return { total_stars: 1000 };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchExecuted = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/settle-week', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ weekId: '2026-W46', adRevenueUsdt: 100.0 })
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.weekId, '2026-W46');
+  assert.equal(data.totalRevenueUsdt, 100.0);
+  assert.equal(data.communityPoolUsdt, 50.0);
+  assert.equal(data.totalStars, 1000);
+  assert.equal(data.valuePerStar, 0.05);
+  assert(batchExecuted);
+});
