@@ -872,3 +872,67 @@ test('webhook endpoint handles /pool, /help, /myid, /claim_admin commands withou
     assert.deepEqual(await res.json(), { ok: true });
   }
 });
+
+test('POST & GET /api/ads/postback handles Monetag ymid and estimated_price macros', async () => {
+  let batchStatements = 0;
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          if (query.includes('FROM players WHERE id=?')) {
+            return { id: 'user_monetag_1', stars: 2, weekly_stars: 2, last_ad_at: 0 };
+          }
+          if (query.includes('FROM ad_impressions WHERE id=?')) {
+            return null; // not existing yet
+          }
+          return null;
+        }
+      };
+      return stmt;
+    },
+    async batch(stmts) {
+      batchStatements = stmts.length;
+      return [];
+    }
+  };
+
+  // 1. GET postback format with Monetag macros
+  const getRes = await worker.fetch(new Request('https://example.com/api/ads/postback?network=monetag&ymid=user_monetag_1&estimated_price=0.035&event_type=impression&transaction_id=tx_999'), {
+    DB: mockDB
+  });
+  assert.equal(getRes.status, 200);
+  const getData = await getRes.json();
+  assert.equal(getData.ok, true);
+  assert.equal(getData.reward, 1);
+  assert.equal(getData.user_id, 'user_monetag_1');
+  assert.equal(getData.network, 'monetag');
+  assert.equal(getData.revenueRecorded, 0.035);
+  assert.equal(batchStatements, 4);
+
+  // 2. Duplicate transaction_id check
+  const dupDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          if (query.includes('FROM players WHERE id=?')) {
+            return { id: 'user_monetag_1', stars: 3, weekly_stars: 3 };
+          }
+          if (query.includes('FROM ad_impressions WHERE id=?')) {
+            return { id: 'tx_tx_999' }; // already exists!
+          }
+          return null;
+        }
+      };
+      return stmt;
+    }
+  };
+  const dupRes = await worker.fetch(new Request('https://example.com/api/ads/postback?network=monetag&ymid=user_monetag_1&transaction_id=tx_999'), {
+    DB: dupDB
+  });
+  assert.equal(dupRes.status, 200);
+  const dupData = await dupRes.json();
+  assert.equal(dupData.ok, true);
+  assert.equal(dupData.duplicate, true);
+});

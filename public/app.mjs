@@ -1638,6 +1638,96 @@ function initAdsGramSDK() {
   }
 }
 
+function initMonetagInApp() {
+  const zoneId = window.MONETAG_ZONE_ID || '12239871';
+  const fnName = `show_${zoneId}`;
+  const applySettings = () => {
+    if (typeof window[fnName] === 'function') {
+      try {
+        window[fnName]({
+          type: 'inApp',
+          inAppSettings: {
+            frequency: 2,
+            capping: 0.1,
+            interval: 30,
+            timeout: 5,
+            everyPage: false
+          }
+        });
+        console.log('[Monetag] In-App Interstitial configured');
+      } catch (e) {
+        console.warn('[Monetag] In-App Interstitial notice:', e);
+      }
+    }
+  };
+
+  if (typeof window[fnName] === 'function') {
+    applySettings();
+  } else {
+    let retries = 0;
+    const poll = setInterval(() => {
+      retries++;
+      if (typeof window[fnName] === 'function') {
+        clearInterval(poll);
+        applySettings();
+      } else if (retries > 30) {
+        clearInterval(poll);
+      }
+    }, 200);
+  }
+}
+
+async function playMonetagAd() {
+  const zoneId = window.MONETAG_ZONE_ID || '12239871';
+  const fnName = `show_${zoneId}`;
+
+  // If function not yet available, wait up to 3 seconds for SDK script
+  if (typeof window[fnName] !== 'function') {
+    let script = document.querySelector(`script[data-zone="${zoneId}"]`);
+    if (!script) {
+      script = document.createElement('script');
+      script.src = 'https://yoszi.com/sdk.js';
+      script.dataset.zone = zoneId;
+      script.dataset.sdk = fnName;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    let waited = 0;
+    while (typeof window[fnName] !== 'function' && waited < 3000) {
+      await new Promise(r => setTimeout(r, 100));
+      waited += 100;
+    }
+  }
+
+  if (typeof window[fnName] !== 'function') {
+    throw new Error('Monetag SDK not loaded. Please verify connection or disable content blockers.');
+  }
+
+  toast('Loading sponsor ad from Monetag...');
+  const fn = window[fnName];
+  const ymid = player?.id ? String(player.id) : undefined;
+
+  // Format 1: Rewarded Interstitial
+  try {
+    await fn(ymid ? { ymid, requestVar: 'rewarded_ad' } : undefined);
+    currentAdNetwork = 'monetag';
+    await claimAdReward();
+    return true;
+  } catch (err) {
+    console.warn('Monetag Rewarded Interstitial fallback to Rewarded Popup:', err);
+    // Format 2: Rewarded Popup ('pop')
+    try {
+      await fn('pop');
+      currentAdNetwork = 'monetag';
+      await claimAdReward();
+      return true;
+    } catch (popErr) {
+      console.warn('Monetag Rewarded Popup also failed:', popErr);
+      throw popErr;
+    }
+  }
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -1848,7 +1938,17 @@ function openAdPlayer() {
     return;
   }
 
-  // 1. AdsGram integration (Telegram Mini App Rewarded Video)
+  // 1. Primary: Monetag SDK integration (Zone: 12239871)
+  const monetagZone = window.MONETAG_ZONE_ID || '12239871';
+  if (monetagZone) {
+    playMonetagAd().catch((err) => {
+      console.warn('Monetag ad presentation notice:', err);
+      toast('Monetag ad was closed or no fill available right now. Please try again in a few moments.');
+    });
+    return;
+  }
+
+  // 2. AdsGram integration (Telegram Mini App Rewarded Video)
   if (online && window.Adsgram && window.ADSGRAM_BLOCK_ID) {
     initAdsGramSDK();
     if (adsgramController) {
@@ -1868,11 +1968,11 @@ function openAdPlayer() {
     }
   }
 
-  // 2. Real URL / Direct link networks (Monetag, OnClickA, Adsterra, Telega, etc.)
+  // 3. Real URL / Direct link networks (OnClickA, Adsterra, Telega, etc.)
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram') continue;
+    if (net === 'adsgram' || net === 'monetag') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2289,7 +2389,9 @@ async function boot() {
     if (health) {
       window.LIVE_ADS_ACTIVE = Boolean(health.adsEnabled);
       if (health.adsgramBlockId) window.ADSGRAM_BLOCK_ID = health.adsgramBlockId;
-      if (health.monetagZoneId) window.MONETAG_ZONE_ID = health.monetagZoneId;
+      window.MONETAG_ZONE_ID = health.monetagZoneId || '12239871';
+      window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
+      initMonetagInApp();
     }
   } catch {}
 

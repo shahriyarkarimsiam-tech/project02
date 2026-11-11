@@ -7,6 +7,10 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  "vars": {
+    "MONETAG_ZONE_ID": "12239871",
+    "MONETAG_APP_ID": "3572709"
+  },
   "d1_databases": [
     {
       "binding": "DB",

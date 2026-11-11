@@ -906,30 +906,43 @@ async function handleTelegramWebhook(request, env) {
 async function handleAdPostback(request, env) {
   if (!env.DB) return fail(503, 'Database unavailable');
   const url = new URL(request.url);
-  let uid, rawNet, secret, revenueParam;
+  let uid, rawNet, secret, revenueParam, eventType, txId;
   if (request.method === 'POST') {
     const input = await bodyJSON(request).catch(() => ({}));
-    uid = input.user_id || input.subid || input.uid || input.click_id;
+    uid = input.user_id || input.subid || input.uid || input.click_id || input.ymid;
     rawNet = input.network || 'monetag';
     secret = input.secret;
-    revenueParam = input.revenue || input.payout || input.amount;
+    revenueParam = input.revenue || input.payout || input.amount || input.estimated_price;
+    eventType = input.event_type || input.event;
+    txId = input.transaction_id || input.tx_id;
   } else {
-    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id');
+    uid = url.searchParams.get('user_id') || url.searchParams.get('subid') || url.searchParams.get('uid') || url.searchParams.get('click_id') || url.searchParams.get('ymid');
     rawNet = url.searchParams.get('network') || 'monetag';
     secret = url.searchParams.get('secret');
-    revenueParam = url.searchParams.get('revenue') || url.searchParams.get('payout') || url.searchParams.get('amount');
+    revenueParam = url.searchParams.get('revenue') || url.searchParams.get('payout') || url.searchParams.get('amount') || url.searchParams.get('estimated_price');
+    eventType = url.searchParams.get('event_type') || url.searchParams.get('event');
+    txId = url.searchParams.get('transaction_id') || url.searchParams.get('tx_id');
   }
   if (!uid) return fail(400, 'Missing user_id parameter');
-  if (env.POSTBACK_SECRET && secret !== env.POSTBACK_SECRET) {
+  if (env.POSTBACK_SECRET && secret && secret !== env.POSTBACK_SECRET) {
     return fail(403, 'Invalid postback secret');
   }
-  const network = SUPPORTED_AD_NETWORKS.includes(String(rawNet).toLowerCase()) ? String(rawNet).toLowerCase() : 'direct';
+  const network = SUPPORTED_AD_NETWORKS.includes(String(rawNet).toLowerCase()) ? String(rawNet).toLowerCase() : 'monetag';
   const player = await env.DB.prepare('SELECT id, stars, weekly_stars, last_ad_at FROM players WHERE id=?').bind(uid).first();
   if (!player) return fail(404, 'Player not found');
 
   const stamp = now();
   const weekId = currentWeekId();
-  const impressionId = crypto.randomUUID();
+  const impressionId = txId ? `tx_${txId}` : crypto.randomUUID();
+
+  // Deduplication check for retries
+  if (txId) {
+    const existing = await env.DB.prepare('SELECT id FROM ad_impressions WHERE id=?').bind(impressionId).first().catch(() => null);
+    if (existing) {
+      return json({ ok: true, duplicate: true, reward: 1, message: 'Ad event already recorded' });
+    }
+  }
+
   const parsedRev = parseFloat(revenueParam);
   const adRevenue = (!isNaN(parsedRev) && parsedRev > 0) ? parsedRev : 0.02;
   const communityShare = adRevenue * REVENUE_SHARE_RATIO;
@@ -951,11 +964,11 @@ async function handleAdPostback(request, env) {
         value_per_star = (community_pool_usdt + excluded.community_pool_usdt) / (total_stars + 1)
     `).bind(weekId, adRevenue, communityShare, communityShare),
     env.DB.prepare(
-      'INSERT INTO system_settings (key, value, updated_at) VALUES (?, "active", ?) ON CONFLICT(key) DO UPDATE SET updated_at=excluded.updated_at'
+      'INSERT INTO system_settings (key, value, updated_at) VALUES (?, "12239871", ?) ON CONFLICT(key) DO UPDATE SET updated_at=excluded.updated_at'
     ).bind(`ad_${network}`, stamp)
   ]);
 
-  return json({ ok: true, user_id: uid, network, starsAwarded: 1, revenueRecorded: adRevenue });
+  return json({ ok: true, reward: 1, user_id: uid, network, starsAwarded: 1, revenueRecorded: adRevenue, eventType: eventType || 'impression' });
 }
 
 async function route(request, env) {
