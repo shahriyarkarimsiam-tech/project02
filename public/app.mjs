@@ -2047,6 +2047,69 @@ async function playRichAdsVideo() {
   });
 }
 
+function initTadsSDK() {
+  const widgetId = Number(window.TADS_WIDGET_ID || '13243');
+  if (window.tads && typeof window.tads.init === 'function') {
+    try {
+      window.tads.init({
+        widgetId,
+        type: 'static',
+        debug: false,
+        onClickReward: () => {
+          currentAdNetwork = 'tads';
+          claimAdReward();
+        },
+        onShowReward: () => {
+          currentAdNetwork = 'tads';
+          claimAdReward();
+        },
+        onAdsNotFound: () => {}
+      });
+      console.log('[TADS] Widget initialized successfully (ID: ' + widgetId + ')');
+    } catch (e) {
+      console.warn('[TADS] init notice:', e);
+    }
+  }
+}
+
+async function playTadsAd() {
+  const widgetId = Number(window.TADS_WIDGET_ID || '13243');
+  toast('Loading sponsor ad from TADS...');
+  return new Promise((resolve, reject) => {
+    if (!window.tads) {
+      return reject(new Error('TADS SDK not available'));
+    }
+    try {
+      if (typeof window.tads.renderTadsWidget === 'function') {
+        window.tads.renderTadsWidget({
+          id: widgetId,
+          type: 'fullscreen',
+          onShowReward: async () => {
+            currentAdNetwork = 'tads';
+            await claimAdReward();
+            resolve(true);
+          }
+        });
+      } else if (typeof window.tads.init === 'function') {
+        window.tads.init({
+          widgetId,
+          type: 'fullscreen',
+          onShowReward: async () => {
+            currentAdNetwork = 'tads';
+            await claimAdReward();
+            resolve(true);
+          }
+        });
+      } else {
+        reject(new Error('TADS display method not available'));
+      }
+    } catch (err) {
+      console.warn('[TADS] presentation error:', err);
+      reject(err);
+    }
+  });
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -2304,15 +2367,26 @@ async function openAdPlayer() {
       await playRichAdsVideo();
       return;
     } catch (richadsErr) {
-      console.warn('RichAds VAST presentation failed:', richadsErr);
+      console.warn('RichAds presentation failed:', richadsErr);
     }
   }
 
-  // 5. Fallback verified ad partners
+  // 5. Quinary: TADS Telegram Ad Network (Widget: 13243)
+  const tadsWidget = window.TADS_WIDGET_ID || '13243';
+  if (tadsWidget) {
+    try {
+      await playTadsAd();
+      return;
+    } catch (tadsErr) {
+      console.warn('TADS ad presentation failed:', tadsErr);
+    }
+  }
+
+  // 6. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2743,10 +2817,12 @@ async function boot() {
       window.ONCLICKA_SPOT_ID = health.onclickaSpotId || '6155185';
       window.RICHADS_VAST_URL = health.richadsVastUrl || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
       window.RICHADS_PUB_ID = health.richadsPubId || '1028723';
+      window.TADS_WIDGET_ID = health.tadsWidgetId || '13243';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
       initOnClickASDK();
+      initTadsSDK();
     }
   } catch {}
 
