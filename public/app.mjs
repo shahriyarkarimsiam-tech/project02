@@ -2276,7 +2276,13 @@ async function executeAdminSettlement() {
 }
 
 async function boot() {
-  try { tg?.ready?.(); tg?.expand?.(); } catch {}
+  try {
+    tg?.ready?.();
+    tg?.expand?.();
+    tg?.enableClosingConfirmation?.();
+    tg?.setHeaderColor?.('#080d18');
+    tg?.setBackgroundColor?.('#080d18');
+  } catch {}
   $('today-label').textContent = new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
   try {
     const health = await api('/health').catch(() => null);
@@ -2582,7 +2588,10 @@ $('play-again-btn').addEventListener('click', () => {
 });
 
 let swipe = null; const board = $('game-board');
-board.addEventListener('pointerdown', e => { swipe = { x: e.clientX, y: e.clientY }; });
+board.addEventListener('pointerdown', e => {
+  swipe = { x: e.clientX, y: e.clientY };
+  try { board.setPointerCapture?.(e.pointerId); } catch {}
+});
 board.addEventListener('pointerup', e => {
   if (!swipe) return; const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
@@ -2590,14 +2599,18 @@ board.addEventListener('pointerup', e => {
 });
 board.addEventListener('pointercancel', () => swipe = null);
 
-let viperSwipe = null; const vCanvas = $('viper-canvas');
-vCanvas?.addEventListener('pointerdown', e => { viperSwipe = { x: e.clientX, y: e.clientY }; });
-vCanvas?.addEventListener('pointerup', e => {
+let viperSwipe = null;
+const vWrap = document.querySelector('.viper-canvas-wrap') || $('viper-canvas');
+vWrap?.addEventListener('pointerdown', e => {
+  viperSwipe = { x: e.clientX, y: e.clientY };
+  try { vWrap.setPointerCapture?.(e.pointerId); } catch {}
+});
+vWrap?.addEventListener('pointerup', e => {
   if (!viperSwipe) return; const dx = e.clientX - viperSwipe.x, dy = e.clientY - viperSwipe.y; viperSwipe = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 15) return;
   setViperDirection(Math.abs(dx) >= Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy > 0 ? 'down' : 'up');
 });
-vCanvas?.addEventListener('pointercancel', () => viperSwipe = null);
+vWrap?.addEventListener('pointercancel', () => viperSwipe = null);
 
 document.addEventListener('keydown', e => {
   if ($('info-dialog').open || $('finish-dialog').open || view !== 'play') return;
