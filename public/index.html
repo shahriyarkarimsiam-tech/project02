@@ -83,7 +83,7 @@
                   <p>Watch sponsor ads to earn Stars. Weekly rounds convert active Stars into withdrawable USDT when the admin announces the rate. 1 completed ad = 1 Star.</p>
                 </div>
                 <div class="pool-banner-metric">
-                  <small>COMMUNITY POOL</small>
+                  <small>PREVIOUS ROUND INCOME</small>
                   <strong id="home-pool-usdt">$0.00</strong>
                   <span>Weekly Round · <b id="home-pool-countdown" style="color:#22c55e;">ACTIVE ROUND</b></span>
                 </div>
@@ -351,9 +351,9 @@
             <div class="pool-stat-card highlight">
               <span class="pool-stat-icon">💰</span>
               <div>
-                <small>COMMUNITY PRIZE POOL (50%)</small>
-                <strong id="pool-community-usdt">$0.00</strong>
-                <span>USDT in this week's pool</span>
+                <small>PREVIOUS WEEK TOTAL INCOME</small>
+                <strong id="pool-previous-income">$0.00</strong>
+                <span id="pool-previous-income-sub">Ad revenue distributed last round</span>
               </div>
             </div>
             <div class="pool-stat-card">
@@ -367,9 +367,9 @@
             <div class="pool-stat-card">
               <span class="pool-stat-icon">📈</span>
               <div>
-                <small>FRIDAY CONVERSION RATIO</small>
-                <strong id="pool-star-value">$0.0000</strong>
-                <span>USDT per 1 Star this Friday</span>
+                <small>OFFICIAL CONVERSION RATE</small>
+                <strong id="pool-star-value" style="font-size: 1.15rem; letter-spacing: 0.5px;">ANNOUNCED FRIDAY</strong>
+                <span id="pool-star-value-sub">Rate announced by Admin around Friday</span>
               </div>
             </div>
           </div>
@@ -387,9 +387,9 @@
                 <span>⭐ in current round</span>
               </div>
               <div class="pool-user-metric">
-                <small>YOUR ESTIMATED CONVERSION</small>
-                <strong id="pool-user-share-usdt" class="payout-accent">$0.00</strong>
-                <span>Converts at settlement</span>
+                <small>SETTLEMENT STATUS</small>
+                <strong id="pool-user-share-usdt" class="payout-accent">CONVERTS FRIDAY</strong>
+                <span id="pool-user-share-sub">Converts to USDT at settlement</span>
               </div>
               <div class="pool-user-metric">
                 <small>LIFETIME STARS</small>
