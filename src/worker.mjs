@@ -832,7 +832,17 @@ async function route(request, env) {
   }
 
   if (method !== 'GET' && !originAllowed(request)) return fail(403, 'Invalid request origin');
-  if (method === 'GET' && path === '/api/health') return json({ ok:true, version:'0.3.0', adsEnabled:true, withdrawalsEnabled:true });
+  if (method === 'GET' && path === '/api/health') {
+    const hasLive = Boolean(env.ADS_ACTIVE === 'true' || env.ADSGRAM_BLOCK_ID || env.MONETAG_ZONE_ID);
+    return json({
+      ok: true,
+      version: '0.3.0',
+      adsEnabled: hasLive,
+      adsgramBlockId: env.ADSGRAM_BLOCK_ID || null,
+      monetagZoneId: env.MONETAG_ZONE_ID || null,
+      withdrawalsEnabled: true
+    });
+  }
 
   if (method === 'POST' && path === '/api/auth/telegram') {
     if (!env.BOT_TOKEN || !env.SESSION_SECRET || !env.DB) return fail(503, 'Server is not configured');
@@ -940,6 +950,10 @@ async function route(request, env) {
 
     if (method === 'POST' && path === '/api/ads/claim') {
       if (!env.DB) return fail(503, 'Database unavailable');
+      const hasLive = Boolean(env.ADS_ACTIVE === 'true' || env.ADSGRAM_BLOCK_ID || env.MONETAG_ZONE_ID);
+      if (!hasLive) {
+        return fail(400, 'No active real ad network configured. Stars cannot be awarded without real ad revenue.');
+      }
       const player = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at FROM players WHERE id=?').bind(uid).first();
       if (!player) return fail(404, 'Player not found');
 

@@ -11,9 +11,16 @@ async function authHeader(uid = '1001') {
 }
 
 test('health endpoint reports enabled monetization and pool', async () => {
+  const result = await worker.fetch(new Request('https://example.com/api/health'), { ADS_ACTIVE: 'true' });
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { ok: true, version: '0.3.0', adsEnabled: true, adsgramBlockId: null, monetagZoneId: null, withdrawalsEnabled: true });
+});
+
+test('health endpoint reports adsEnabled: false when no real ads configured', async () => {
   const result = await worker.fetch(new Request('https://example.com/api/health'), {});
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), { ok: true, version: '0.3.0', adsEnabled: true, withdrawalsEnabled: true });
+  const data = await result.json();
+  assert.equal(data.adsEnabled, false);
 });
 
 test('private endpoints refuse requests without signed Telegram session', async () => {
@@ -197,7 +204,7 @@ test('POST /api/ads/claim enforces 60s cooldown', async () => {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ network: 'direct' })
-  }), { DB: mockDB, SESSION_SECRET });
+  }), { DB: mockDB, SESSION_SECRET, ADS_ACTIVE: 'true' });
 
   assert.equal(response.status, 429);
   const data = await response.json();
@@ -230,7 +237,7 @@ test('POST /api/ads/claim enforces 20 ads per 24 hours daily cap', async () => {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ network: 'direct' })
-  }), { DB: mockDB, SESSION_SECRET });
+  }), { DB: mockDB, SESSION_SECRET, ADS_ACTIVE: 'true' });
 
   assert.equal(response.status, 429);
   const data = await response.json();
@@ -272,7 +279,7 @@ test('POST /api/ads/claim successfully awards 1 star and records impression', as
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ network: 'direct' })
-  }), { DB: mockDB, SESSION_SECRET });
+  }), { DB: mockDB, SESSION_SECRET, ADS_ACTIVE: 'true' });
 
   assert.equal(response.status, 200);
   const data = await response.json();
@@ -744,13 +751,26 @@ test('POST /api/ads/claim supports multi-network tracking', async () => {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
     body: JSON.stringify({ network: 'monetag' })
-  }), { DB: mockDB, SESSION_SECRET });
+  }), { DB: mockDB, SESSION_SECRET, ADS_ACTIVE: 'true' });
 
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true);
   assert.equal(data.network, 'monetag');
   assert.equal(data.rewardStars, 1);
+});
+
+test('POST /api/ads/claim rejects with 400 when no real ads configured', async () => {
+  const auth = await authHeader('1001');
+  const mockDB = { prepare() { return { bind() { return { async first() { return { id: '1001' }; } }; } }; } };
+  const response = await worker.fetch(new Request('https://example.com/api/ads/claim', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'direct' })
+  }), { DB: mockDB, SESSION_SECRET });
+  assert.equal(response.status, 400);
+  const data = await response.json();
+  assert(data.error.includes('No active real ad network configured'));
 });
 
 test('GET /api/admin/ads-summary returns network breakdown', async () => {

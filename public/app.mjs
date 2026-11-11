@@ -2318,6 +2318,15 @@ async function executeAdminSettlement() {
 async function boot() {
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
   $('today-label').textContent = new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+  try {
+    const health = await api('/health').catch(() => null);
+    if (health) {
+      window.LIVE_ADS_ACTIVE = Boolean(health.adsEnabled);
+      if (health.adsgramBlockId) window.ADSGRAM_BLOCK_ID = health.adsgramBlockId;
+      if (health.monetagZoneId) window.MONETAG_ZONE_ID = health.monetagZoneId;
+    }
+  } catch {}
+
   if (!(await authenticate())) {
     player = { ...emptyPlayer(), ...read('ms_demo_player_v2', {}) };
     player.stars = 0;
