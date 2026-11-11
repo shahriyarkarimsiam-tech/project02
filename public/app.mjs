@@ -1676,6 +1676,9 @@ async function refreshPoolData() {
     }
   }
 
+  const adminCtrls = $('admin-pool-controls');
+  if (adminCtrls) adminCtrls.style.display = (player && player.isAdmin) ? 'block' : 'none';
+
   updateCooldownDisplay();
   updateCountdownClocks();
 }
@@ -1880,6 +1883,169 @@ async function submitWithdrawal() {
   }
 }
 
+// ============================================================================
+// ADMIN CONSOLE: MANUAL SETTLEMENT CONFIRMATION
+// ============================================================================
+
+let adminSummary = {
+  weekId: '',
+  totalStars: 0,
+  totalRevenueUsdt: 0,
+  communityPoolUsdt: 0,
+  eligiblePlayers: 0,
+  currentRatio: 0
+};
+
+async function openAdminSettleDialog() {
+  const dialog = $('admin-settle-dialog');
+  if (!dialog) return;
+
+  const statusMsg = $('admin-settle-status');
+  if (statusMsg) statusMsg.hidden = true;
+  if ($('admin-confirm-checkbox')) $('admin-confirm-checkbox').checked = false;
+  if ($('admin-execute-settle-btn')) $('admin-execute-settle-btn').disabled = true;
+
+  if (online) {
+    try {
+      const summary = await api('/admin/pool-summary');
+      adminSummary = summary;
+    } catch (err) {
+      console.warn('Failed to fetch admin pool summary:', err);
+      adminSummary = {
+        weekId: poolData.weekId || 'Current Round',
+        totalStars: poolData.communityTotalStars || 0,
+        totalRevenueUsdt: (poolData.communityPoolUsdt || 0) * 2,
+        communityPoolUsdt: poolData.communityPoolUsdt || 0,
+        eligiblePlayers: 1,
+        currentRatio: poolData.estimatedValuePerStar || 0
+      };
+    }
+  } else {
+    adminSummary = {
+      weekId: poolData.weekId || '2026-W46',
+      totalStars: poolData.communityTotalStars || 12500,
+      totalRevenueUsdt: (poolData.communityPoolUsdt || 125.0) * 2,
+      communityPoolUsdt: poolData.communityPoolUsdt || 125.0,
+      eligiblePlayers: 1,
+      currentRatio: poolData.estimatedValuePerStar || 0.01
+    };
+  }
+
+  if ($('admin-pool-weekid')) $('admin-pool-weekid').textContent = adminSummary.weekId;
+  if ($('admin-pool-total-stars')) $('admin-pool-total-stars').textContent = num(adminSummary.totalStars);
+  if ($('admin-pool-eligible-players')) $('admin-pool-eligible-players').textContent = num(adminSummary.eligiblePlayers);
+
+  const estRev = Number(adminSummary.totalRevenueUsdt || 0);
+  const estRate = Number(adminSummary.currentRatio || 0);
+  if ($('admin-settle-rev-input')) $('admin-settle-rev-input').value = estRev > 0 ? estRev.toFixed(2) : '';
+  if ($('admin-settle-rate-input')) $('admin-settle-rate-input').value = estRate > 0 ? estRate.toFixed(4) : '';
+
+  updateAdminCalculatedPreview();
+  dialog.showModal();
+}
+
+function updateAdminCalculatedPreview() {
+  const revInput = $('admin-settle-rev-input');
+  const rateInput = $('admin-settle-rate-input');
+  const preview = $('admin-calculated-ratio');
+  const confirmCb = $('admin-confirm-checkbox');
+  const execBtn = $('admin-execute-settle-btn');
+
+  const totalStars = adminSummary.totalStars || 0;
+  const rev = Number(revInput?.value || 0);
+  const rate = Number(rateInput?.value || 0);
+
+  let finalRate = 0;
+  let finalPool = 0;
+
+  if (rate > 0) {
+    finalRate = rate;
+    finalPool = totalStars * rate;
+  } else if (rev > 0) {
+    finalPool = rev * 0.50;
+    finalRate = totalStars > 0 ? (finalPool / totalStars) : 0;
+  }
+
+  if (preview) {
+    preview.textContent = `1 ⭐ = $${finalRate.toFixed(4)} USDT (Pool: $${finalPool.toFixed(2)} USDT)`;
+  }
+
+  if (execBtn) {
+    const isReady = (finalRate > 0 || totalStars === 0) && confirmCb?.checked;
+    execBtn.disabled = !isReady;
+  }
+}
+
+async function executeAdminSettlement() {
+  const btn = $('admin-execute-settle-btn');
+  const statusMsg = $('admin-settle-status');
+  const revInput = $('admin-settle-rev-input');
+  const rateInput = $('admin-settle-rate-input');
+
+  const adRevenueUsdt = revInput?.value ? Number(revInput.value) : undefined;
+  const valuePerStar = rateInput?.value ? Number(rateInput.value) : undefined;
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Processing Settlement...';
+    }
+
+    if (online) {
+      const res = await api('/admin/settle-week', {
+        method: 'POST',
+        body: {
+          weekId: adminSummary.weekId,
+          adRevenueUsdt,
+          valuePerStar
+        }
+      });
+      if (statusMsg) {
+        statusMsg.hidden = false;
+        statusMsg.className = 'pool-status-msg success';
+        statusMsg.textContent = `✅ Confirmed! Converted ${num(res.totalStars)} Stars at $${Number(res.valuePerStar).toFixed(4)} USDT/Star.`;
+      }
+      toast('✅ Settlement Confirmed! Converted to USDT.');
+      await refreshPoolData();
+      try {
+        const updated = await api('/me');
+        if (updated?.player) player = { ...player, ...updated.player };
+        renderProfileBase();
+      } catch {}
+    } else {
+      const rate = valuePerStar || (adRevenueUsdt ? (adRevenueUsdt * 0.5) / (adminSummary.totalStars || 1) : 0.01);
+      const earned = (player.weeklyStars || 0) * rate;
+      player.usdtBalance = (player.usdtBalance || 0) + earned;
+      player.weeklyStars = 0;
+      storeGuest();
+      if (statusMsg) {
+        statusMsg.hidden = false;
+        statusMsg.className = 'pool-status-msg success';
+        statusMsg.textContent = `✅ Demo Settled! Converted weekly stars to +$${earned.toFixed(2)} USDT.`;
+      }
+      toast('✅ Demo Settlement Confirmed!');
+      refreshPoolData();
+      renderProfileBase();
+    }
+
+    setTimeout(() => {
+      $('admin-settle-dialog')?.close();
+    }, 2200);
+  } catch (err) {
+    if (statusMsg) {
+      statusMsg.hidden = false;
+      statusMsg.className = 'pool-status-msg error';
+      statusMsg.textContent = `Settlement failed: ${err.message}`;
+    }
+    toast(`Settlement failed: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Confirm & Convert Stars Now';
+    }
+  }
+}
+
 async function boot() {
   try { tg?.ready?.(); tg?.expand?.(); } catch {}
   $('today-label').textContent = new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
@@ -1991,6 +2157,29 @@ $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
 $('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
+
+// Admin Settlement Console Listeners
+$('open-admin-settle-btn')?.addEventListener('click', openAdminSettleDialog);
+$('admin-settle-rev-input')?.addEventListener('input', (e) => {
+  const rev = Number(e.target.value || 0);
+  const totalStars = adminSummary.totalStars || 0;
+  if (rev > 0 && $('admin-settle-rate-input')) {
+    const rate = totalStars > 0 ? (rev * 0.50) / totalStars : 0;
+    $('admin-settle-rate-input').value = rate.toFixed(4);
+  }
+  updateAdminCalculatedPreview();
+});
+$('admin-settle-rate-input')?.addEventListener('input', (e) => {
+  const rate = Number(e.target.value || 0);
+  const totalStars = adminSummary.totalStars || 0;
+  if (rate > 0 && $('admin-settle-rev-input')) {
+    const rev = (rate * totalStars) * 2;
+    $('admin-settle-rev-input').value = rev.toFixed(2);
+  }
+  updateAdminCalculatedPreview();
+});
+$('admin-confirm-checkbox')?.addEventListener('change', updateAdminCalculatedPreview);
+$('admin-execute-settle-btn')?.addEventListener('click', executeAdminSettlement);
 
 $('quick-withdraw-all-btn')?.addEventListener('click', () => {
   if ($('wallet-amount-input')) $('wallet-amount-input').value = Math.max(1, Number(player.usdtBalance || 0)).toFixed(2);

@@ -54,8 +54,20 @@ function currentStreak(days) {
   }
   return total;
 }
+async function isAuthorizedAdmin(uid, env) {
+  if (!uid) return false;
+  const uidStr = String(uid);
+  if (env.ADMIN_TELEGRAM_ID && uidStr === String(env.ADMIN_TELEGRAM_ID)) return true;
+  if (!env.DB) return false;
+  try {
+    const row = await env.DB.prepare('SELECT value FROM system_settings WHERE key="admin_telegram_id"').first();
+    if (row?.value && row.value === uidStr) return true;
+  } catch {}
+  return false;
+}
+
 async function userProfile(env, uid) {
-  const [player, themed, active, days, recent, daily] = await Promise.all([
+  const [player, themed, active, days, recent, daily, isAdmin] = await Promise.all([
     env.DB.prepare(`SELECT id, display_name AS name, coins, best_score AS bestScore, best_tile AS bestTile,
       games_played AS gamesPlayed, equipped_theme AS equippedTheme,
       COALESCE(best_blocks_score, 0) AS bestBlocksScore,
@@ -72,10 +84,11 @@ async function userProfile(env, uid) {
     env.DB.prepare('SELECT id, seed, mode, COALESCE(game_type, "merge") AS gameType, challenge_day AS challengeDay, started_at AS startedAt FROM games WHERE player_id=? AND finished_at IS NULL AND started_at>? ORDER BY started_at DESC LIMIT 30').bind(uid, now()-DAY*7).all(),
     env.DB.prepare("SELECT DISTINCT date(finished_at,'unixepoch') AS day FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY day DESC LIMIT 40").bind(uid).all(),
     env.DB.prepare('SELECT score, mode, COALESCE(game_type, "merge") AS gameType, finished_at AS finishedAt FROM games WHERE player_id=? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 5').bind(uid).all(),
-    env.DB.prepare('SELECT id, finished_at AS finishedAt, score FROM games WHERE player_id=? AND mode=? AND challenge_day=? LIMIT 1').bind(uid, 'daily', todayUTC()).first()
+    env.DB.prepare('SELECT id, finished_at AS finishedAt, score FROM games WHERE player_id=? AND mode=? AND challenge_day=? LIMIT 1').bind(uid, 'daily', todayUTC()).first(),
+    isAuthorizedAdmin(uid, env)
   ]);
   if (!player) return null;
-  return { player: { ...player, streak: currentStreak((days.results||[]).map(d=>d.day)), ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)] }, activeRuns: active.results||[], recentGames: recent.results||[], daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null } };
+  return { player: { ...player, isAdmin: Boolean(isAdmin), streak: currentStreak((days.results||[]).map(d=>d.day)), ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)] }, activeRuns: active.results||[], recentGames: recent.results||[], daily: { date:todayUTC(), started: Boolean(daily), completed: Boolean(daily?.finishedAt), score:daily?.score??null } };
 }
 
 async function handleTelegramWebhook(request, env) {
@@ -86,7 +99,157 @@ async function handleTelegramWebhook(request, env) {
     if (!message || !message.chat?.id) return json({ ok: true });
     const chatId = message.chat.id;
     const firstName = message.from?.first_name || 'Player';
+    const text = String(message.text || '').trim();
     const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
+
+    // 1. /myid command
+    if (text === '/myid') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${firstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full settlement authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
+
+    // 2. /claim_admin command
+    if (text.startsWith('/claim_admin')) {
+      const parts = text.split(/\s+/);
+      const key = parts[1];
+      let canClaim = false;
+      if (env.ADMIN_SECRET && key === env.ADMIN_SECRET) {
+        canClaim = true;
+      } else if (!env.ADMIN_TELEGRAM_ID && env.DB) {
+        const existing = await env.DB.prepare('SELECT value FROM system_settings WHERE key="admin_telegram_id"').first();
+        if (!existing) canClaim = true;
+        else if (existing.value === String(chatId)) canClaim = true;
+      }
+      if (canClaim && env.DB) {
+        await env.DB.prepare('INSERT INTO system_settings (key, value, updated_at) VALUES ("admin_telegram_id", ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at')
+          .bind(String(chatId), now()).run();
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `👑 *Admin Rights Granted!*\n\nYou are now confirmed as the platform administrator.\n\n🛠 *Available Commands:*\n• \`/settle <revenue_usdt>\` - Settle week with total ad revenue\n• \`/settle_rate <rate_per_star>\` - Settle with exact USDT per Star\n• \`/settle_preview\` - Check current stars and pool size`,
+            parse_mode: 'Markdown'
+          })
+        });
+        return json({ ok: true });
+      } else {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `⛔ *Admin Claim Rejected.* An administrator is already registered or secret key was invalid.`,
+            parse_mode: 'Markdown'
+          })
+        });
+        return json({ ok: true });
+      }
+    }
+
+    // 3. /settle_preview command
+    if (text === '/settle_preview') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+      const weekId = currentWeekId();
+      const pool = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first();
+      const eligible = await env.DB.prepare('SELECT COUNT(*) AS count FROM players WHERE weekly_stars > 0').first();
+      const stars = pool?.total_stars || 0;
+      const poolUsdt = Number(pool?.community_pool_usdt || 0).toFixed(2);
+      const estRate = stars > 0 ? (pool.community_pool_usdt / stars).toFixed(4) : '0.0000';
+
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `📊 *Pool Preview (${weekId})*:\n• *Total Community Stars:* ${stars} ⭐\n• *Eligible Players:* ${eligible?.count || 0}\n• *Accumulated Pool (50%):* $${poolUsdt} USDT\n• *Estimated Rate:* $${estRate} USDT / Star\n\n👉 *To confirm conversion & payout:*\n• Reply \`/settle <total_ad_revenue_usdt>\`\n• Or reply \`/settle_rate <exact_rate_per_star>\``,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
+
+    // 4. /settle or /settle_rate command
+    const settleRevMatch = text.match(/^\/settle(?:\s+([\d.]+))?$/);
+    const settleRateMatch = text.match(/^\/settle_rate\s+([\d.]+)$/);
+
+    if (settleRevMatch || settleRateMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        });
+        return json({ ok: true });
+      }
+
+      const weekId = currentWeekId();
+      const pool = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first();
+      const totalStars = pool?.total_stars || 0;
+
+      let valuePerStar = 0.0;
+      let communityPool = 0.0;
+      let totalRevenue = 0.0;
+
+      if (settleRateMatch) {
+        valuePerStar = Math.max(0, Number(settleRateMatch[1]));
+        communityPool = totalStars * valuePerStar;
+        totalRevenue = communityPool * 2;
+      } else {
+        totalRevenue = settleRevMatch[1] !== undefined ? Math.max(0, Number(settleRevMatch[1])) : Number(pool?.total_revenue_usdt || 0.0);
+        communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+        valuePerStar = calcStarValue(communityPool, totalStars);
+      }
+
+      const stamp = now();
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO weekly_pools (week_id, total_revenue_usdt, community_pool_usdt, total_stars, value_per_star, status, settled_at)
+          VALUES (?, ?, ?, ?, ?, 'settled', ?)
+          ON CONFLICT(week_id) DO UPDATE SET
+            total_revenue_usdt = excluded.total_revenue_usdt,
+            community_pool_usdt = excluded.community_pool_usdt,
+            value_per_star = excluded.value_per_star,
+            status = 'settled',
+            settled_at = excluded.settled_at
+        `).bind(weekId, totalRevenue, communityPool, totalStars, valuePerStar, stamp),
+        env.DB.prepare(`
+          UPDATE players
+          SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
+              weekly_stars = 0
+          WHERE weekly_stars > 0
+        `).bind(valuePerStar)
+      ]);
+
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `🎉 *Confirmed! Stars Converted into USDT!*\n\n• *Round:* ${weekId}\n• *Total Stars Converted:* ${totalStars} ⭐\n• *Conversion Ratio:* 1 ⭐ = *\$${valuePerStar.toFixed(4)} USDT*\n• *Total Community Pool:* \$${communityPool.toFixed(2)} USDT\n\n✅ All players with weekly stars have been credited with withdrawable USDT!`,
+          parse_mode: 'Markdown'
+        })
+      });
+      return json({ ok: true });
+    }
 
     await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -390,9 +553,37 @@ async function route(request, env) {
       });
     }
 
+    if (method === 'GET' && path === '/api/admin/pool-summary') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
+      const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
+      if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
+
+      const weekId = currentWeekId();
+      const [pool, eligible] = await Promise.all([
+        env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first(),
+        env.DB.prepare('SELECT COUNT(*) AS count FROM players WHERE weekly_stars > 0').first()
+      ]);
+
+      const totalStars = pool?.total_stars || 0;
+      const totalRevenueUsdt = Number(pool?.total_revenue_usdt || 0);
+      const communityPoolUsdt = Number(pool?.community_pool_usdt || 0);
+      const currentRatio = totalStars > 0 ? (communityPoolUsdt / totalStars) : 0;
+
+      return json({
+        ok: true,
+        weekId,
+        totalStars,
+        totalRevenueUsdt,
+        communityPoolUsdt,
+        eligiblePlayers: eligible?.count || 0,
+        currentRatio
+      });
+    }
+
     if (method === 'POST' && path === '/api/admin/settle-week') {
       if (!env.DB) return fail(503, 'Database unavailable');
-      const isIdAdmin = env.ADMIN_TELEGRAM_ID && uid === String(env.ADMIN_TELEGRAM_ID);
+      const isIdAdmin = await isAuthorizedAdmin(uid, env);
       const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
       if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
 
@@ -400,11 +591,21 @@ async function route(request, env) {
       const targetWeekId = input.weekId || currentWeekId();
       const poolRow = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(targetWeekId).first();
       const totalStars = poolRow?.total_stars || 0;
-      let totalRevenue = input.adRevenueUsdt !== undefined ? Number(input.adRevenueUsdt) : Number(poolRow?.total_revenue_usdt || 0.0);
-      if (isNaN(totalRevenue) || totalRevenue < 0) totalRevenue = 0.0;
+      let totalRevenue = 0.0;
+      let communityPool = 0.0;
+      let valuePerStar = 0.0;
 
-      const communityPool = totalRevenue * REVENUE_SHARE_RATIO;
-      const valuePerStar = calcStarValue(communityPool, totalStars);
+      if (input.valuePerStar !== undefined && !isNaN(Number(input.valuePerStar)) && Number(input.valuePerStar) >= 0 && input.adRevenueUsdt === undefined) {
+        valuePerStar = Number(input.valuePerStar);
+        communityPool = totalStars * valuePerStar;
+        totalRevenue = communityPool * 2;
+      } else {
+        totalRevenue = input.adRevenueUsdt !== undefined ? Number(input.adRevenueUsdt) : Number(poolRow?.total_revenue_usdt || 0.0);
+        if (isNaN(totalRevenue) || totalRevenue < 0) totalRevenue = 0.0;
+        communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+        valuePerStar = input.valuePerStar !== undefined && !isNaN(Number(input.valuePerStar)) ? Number(input.valuePerStar) : calcStarValue(communityPool, totalStars);
+      }
+
       const stamp = now();
 
       await env.DB.batch([
@@ -604,25 +805,31 @@ export async function handleScheduled(event, env) {
     if (!poolRow || poolRow.status === 'settled') return;
     const totalStars = poolRow.total_stars || 0;
     const communityPool = Number(poolRow.community_pool_usdt || 0.0);
-    const valuePerStar = calcStarValue(communityPool, totalStars);
-    const stamp = now();
+    const estRate = totalStars > 0 ? (communityPool / totalStars).toFixed(4) : '0.0000';
 
-    await env.DB.batch([
-      env.DB.prepare(`
-        UPDATE weekly_pools
-        SET value_per_star = ?, status = 'settled', settled_at = ?
-        WHERE week_id = ?
-      `).bind(valuePerStar, stamp, weekId),
-      env.DB.prepare(`
-        UPDATE players
-        SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
-            weekly_stars = 0
-        WHERE weekly_stars > 0
-      `).bind(valuePerStar)
-    ]);
-    console.log(`[Friday Auto-Settlement] Week ${weekId}: ${totalStars} stars converted @ $${valuePerStar}/star ($${communityPool} pool)`);
+    // REMINDER ONLY: Star-to-USDT conversion requires explicit admin confirmation
+    let adminId = env.ADMIN_TELEGRAM_ID;
+    if (!adminId) {
+      try {
+        const row = await env.DB.prepare('SELECT value FROM system_settings WHERE key="admin_telegram_id"').first();
+        if (row?.value) adminId = row.value;
+      } catch {}
+    }
+
+    if (adminId && env.BOT_TOKEN) {
+      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: adminId,
+          text: `⏰ *Friday Ad Revenue Settlement Reminder*\n\n• *Round:* \`${weekId}\`\n• *Total Community Stars:* \`${totalStars} ⭐\`\n• *Accumulated Pool (50%):* \`$${communityPool.toFixed(2)} USDT\`\n• *Estimated Rate:* \`$${estRate} USDT / Star\`\n\n⚠️ *Per protocol, conversion requires your confirmation:*\n• Reply \`/settle <total_ad_revenue_usdt>\`\n• Or reply \`/settle_rate <exact_rate_per_star>\`\n• Or open the Mini App Admin Settlement Console.`,
+          parse_mode: 'Markdown'
+        })
+      }).catch(err => console.error('[Reminder Alert fetch failed]:', err));
+    }
+    console.log(`[Friday Reminder Sent] Week ${weekId}: ${totalStars} stars awaiting manual admin confirmation.`);
   } catch (err) {
-    console.error('[Friday Auto-Settlement Error]:', err);
+    console.error('[Friday Scheduled Reminder Error]:', err);
   }
 }
 

@@ -402,7 +402,78 @@ test('POST /api/admin/settle-week distributes 50% pool share', async () => {
   assert(batchExecuted);
 });
 
-test('handleScheduled automatically settles Friday pool when cron fires', async () => {
+test('POST /api/admin/settle-week supports direct custom valuePerStar', async () => {
+  const auth = await authHeader('9999');
+  let batchExecuted = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM weekly_pools')) return { total_stars: 500 };
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchExecuted = true;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/settle-week', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ weekId: '2026-W46', valuePerStar: 0.025 })
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.valuePerStar, 0.025);
+  assert.equal(data.totalStars, 500);
+  assert.equal(data.communityPoolUsdt, 12.5); // 500 * 0.025
+  assert(batchExecuted);
+});
+
+test('GET /api/admin/pool-summary returns live metrics to authorized admin', async () => {
+  const auth = await authHeader('9999');
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          if (query.includes('FROM weekly_pools')) {
+            return { total_stars: 800, total_revenue_usdt: 16.0, community_pool_usdt: 8.0 };
+          }
+          if (query.includes('FROM players WHERE weekly_stars > 0')) {
+            return { count: 42 };
+          }
+          return null;
+        }
+      };
+      return stmt;
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/pool-summary', {
+    headers: auth
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.totalStars, 800);
+  assert.equal(data.eligiblePlayers, 42);
+  assert.equal(data.communityPoolUsdt, 8.0);
+  assert.equal(data.currentRatio, 0.01);
+});
+
+test('handleScheduled acts strictly as reminder and NEVER auto-settles without confirmation', async () => {
   const { handleScheduled } = await import('../src/worker.mjs');
   let batchRan = false;
   const mockDB = {
@@ -414,19 +485,23 @@ test('handleScheduled automatically settles Friday pool when cron fires', async 
               if (query.includes('FROM weekly_pools')) {
                 return { total_stars: 2000, total_revenue_usdt: 40.0, community_pool_usdt: 20.0, status: 'active' };
               }
+              if (query.includes('FROM system_settings')) {
+                return { value: '9999' };
+              }
               return null;
             }
           };
         }
       };
     },
-    async batch(stmts) {
-      assert.equal(stmts.length, 2);
+    async batch() {
+      // Must NEVER be called!
       batchRan = true;
       return [];
     }
   };
 
-  await handleScheduled({}, { DB: mockDB });
-  assert(batchRan);
+  await handleScheduled({}, { DB: mockDB, ADMIN_TELEGRAM_ID: '9999' });
+  // Verify that batch settlement did NOT run:
+  assert.equal(batchRan, false);
 });

@@ -283,6 +283,10 @@
             </div>
           </div>
 
+          <div class="admin-pool-controls" id="admin-pool-controls" style="display: none;">
+            <button class="btn btn-outline btn-sm" id="open-admin-settle-btn">⚙ Admin Settlement Console</button>
+          </div>
+
           <div class="pool-stats-grid">
             <div class="pool-stat-card highlight">
               <span class="pool-stat-icon">💰</span>
@@ -520,6 +524,58 @@
       <button class="btn btn-primary wide" id="ad-claim-btn" disabled>Watching Sponsor Ad (15s)...</button>
       <button class="dialog-link" id="ad-cancel-btn">Abort & Close (No Star)</button>
     </div>
+  </dialog>
+
+  <!-- ADMIN SETTLEMENT CONSOLE DIALOG -->
+  <dialog id="admin-settle-dialog" class="game-dialog admin-dialog">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <div class="modal-glyph">⚖</div>
+    <span class="mini-label">ADMIN AUTHORIZATION CONSOLE</span>
+    <h2>Confirm Star-to-USDT Conversion</h2>
+    <p style="font-size: 12px; color: #9cb2c9; margin-bottom: 14px;">
+      Manual settlement confirmation. Converting stars will immediately distribute USDT earnings to eligible players' cashout balances.
+    </p>
+
+    <div class="admin-metrics-box">
+      <div>
+        <small>ROUND</small>
+        <strong id="admin-pool-weekid">---</strong>
+      </div>
+      <div>
+        <small>COMMUNITY STARS</small>
+        <strong id="admin-pool-total-stars">0</strong>
+      </div>
+      <div>
+        <small>PLAYERS</small>
+        <strong id="admin-pool-eligible-players">0</strong>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+      <div class="admin-input-group" style="flex: 1;">
+        <label for="admin-settle-rev-input" class="pool-label">Option A: Total Ad Revenue ($ USDT)</label>
+        <input type="number" id="admin-settle-rev-input" class="pool-input" placeholder="e.g. 100.00" step="0.01" min="0" />
+        <small style="color: #7890a8; font-size: 10px;">50% goes to community pool</small>
+      </div>
+      <div class="admin-input-group" style="flex: 1;">
+        <label for="admin-settle-rate-input" class="pool-label">Option B: Fixed Rate per Star ($)</label>
+        <input type="number" id="admin-settle-rate-input" class="pool-input" placeholder="e.g. 0.0200" step="0.0001" min="0" />
+        <small style="color: #7890a8; font-size: 10px;">Direct 1 ⭐ = $X USDT</small>
+      </div>
+    </div>
+
+    <div class="admin-preview-pill">
+      <span>CALCULATED RATIO:</span>
+      <strong id="admin-calculated-ratio">1 ⭐ = $0.0000 USDT</strong>
+    </div>
+
+    <label class="admin-checkbox-label">
+      <input type="checkbox" id="admin-confirm-checkbox" />
+      <span>I confirm this ad revenue settlement. I understand stars will convert into withdrawable USDT for all players.</span>
+    </label>
+
+    <button class="btn btn-primary wide" id="admin-execute-settle-btn" disabled>Confirm & Convert Stars Now</button>
+    <div id="admin-settle-status" class="pool-status-msg" hidden></div>
   </dialog>
 </body>
 </html>
