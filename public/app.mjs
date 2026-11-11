@@ -2377,16 +2377,11 @@ let currentCooldown = 0;
 let cooldownInterval = null;
 
 function updateCountdownClocks() {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, (poolData.endsAt || (nowSec + 345600)) - nowSec);
-  const days = Math.floor(diff / 86400);
-  const hours = Math.floor((diff % 86400) / 3600);
-  const minutes = Math.floor((diff % 3600) / 60);
-  const seconds = diff % 60;
-  const timeStr = `${days}d ${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
-
-  if ($('pool-countdown')) $('pool-countdown').textContent = timeStr;
-  if ($('home-pool-countdown')) $('home-pool-countdown').textContent = `${days}d ${hours}h`;
+  const statusText = (poolData.status === 'settled')
+    ? 'ROUND SETTLED · NEXT ACTIVE'
+    : 'ACTIVE · ACCUMULATING STARS';
+  if ($('pool-countdown')) $('pool-countdown').textContent = statusText;
+  if ($('home-pool-countdown')) $('home-pool-countdown').textContent = 'ACTIVE ROUND';
 }
 
 async function refreshPoolData() {

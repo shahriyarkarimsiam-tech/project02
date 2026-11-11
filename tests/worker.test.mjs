@@ -958,7 +958,7 @@ test('webhook endpoint responds to /taskkit and /earn commands', async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
-test('webhook endpoint handles /pool, /help, /myid, /claim_admin commands without crashing', async () => {
+test('webhook endpoint handles /pool, /help, /myid, /claim_admin, /settle_preview, /rate commands without crashing', async () => {
   const mockDB = {
     prepare(query) {
       const stmt = {
@@ -968,7 +968,7 @@ test('webhook endpoint handles /pool, /help, /myid, /claim_admin commands withou
             return { total_stars: 120, community_pool_usdt: 12.0 };
           }
           if (query.includes('FROM players WHERE weekly_stars > 0')) {
-            return { count: 8 };
+            return { count: 8, totalActiveStars: 120, totalStars: 120 };
           }
           if (query.includes('FROM system_settings')) {
             return null; // no admin set yet
@@ -980,10 +980,13 @@ test('webhook endpoint handles /pool, /help, /myid, /claim_admin commands withou
         }
       };
       return stmt;
+    },
+    async batch(stmts) {
+      return [];
     }
   };
 
-  const commands = ['/pool', '/help', '/myid', '/claim_admin'];
+  const commands = ['/pool', '/help', '/myid', '/claim_admin', '/settle_preview', '/rate 0.025'];
   for (const cmd of commands) {
     const res = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
       method: 'POST',
