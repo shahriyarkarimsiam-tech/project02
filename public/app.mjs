@@ -1581,21 +1581,33 @@ async function refreshLeaderboard() {
 }
 
 function getTelegramInitData() {
-  if (tg?.initData && tg.initData.length > 0) return tg.initData;
+  if (tg?.initData && tg.initData.length > 0) {
+    try { sessionStorage.setItem('ms_tg_init_data', tg.initData); } catch {}
+    return tg.initData;
+  }
+  try {
+    const cached = sessionStorage.getItem('ms_tg_init_data');
+    if (cached && cached.length > 0) return cached;
+  } catch {}
   try {
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
     const hashParams = new URLSearchParams(hash);
     const hashData = hashParams.get('tgWebAppData');
-    if (hashData) return hashData;
+    if (hashData) {
+      try { sessionStorage.setItem('ms_tg_init_data', hashData); } catch {}
+      return hashData;
+    }
     const searchParams = new URLSearchParams(window.location.search);
     const searchData = searchParams.get('tgWebAppData');
-    if (searchData) return searchData;
+    if (searchData) {
+      try { sessionStorage.setItem('ms_tg_init_data', searchData); } catch {}
+      return searchData;
+    }
   } catch {}
   return '';
 }
 
 async function authenticate() {
-  const initData = getTelegramInitData();
   const tgUser = tg?.initDataUnsafe?.user;
 
   // Immediately assign real Telegram name & ID so user is NEVER seen as generic "Guest player"
@@ -1609,6 +1621,35 @@ async function authenticate() {
     if ($('welcome-name')) $('welcome-name').textContent = realName;
     if ($('player-avatar')) $('player-avatar').textContent = realName[0].toUpperCase();
     if ($('profile-avatar')) $('profile-avatar').textContent = realName[0].toUpperCase();
+  }
+
+  // Fast path: if session token exists, check /api/me first
+  if (authToken) {
+    try {
+      const data = await api('/me');
+      if (data?.player) {
+        online = true;
+        player = { ...emptyPlayer(), ...data.player };
+        activeRuns = data.activeRuns || [];
+        recentGames = data.recentGames || [];
+        daily = data.daily || daily;
+        applyTheme(player.equippedTheme);
+        renderProfileBase();
+        return true;
+      }
+    } catch {
+      authToken = null;
+      try { sessionStorage.removeItem('ms_auth_token'); } catch {}
+    }
+  }
+
+  // Wait slightly if tg.initData is being populated by telegram-web-app.js
+  let initData = getTelegramInitData();
+  if (!initData && window.Telegram?.WebApp) {
+    for (let wait = 0; wait < 5 && !initData; wait++) {
+      await new Promise(r => setTimeout(r, 100));
+      initData = getTelegramInitData();
+    }
   }
 
   if (!initData) {
@@ -1742,25 +1783,29 @@ async function playMonetagAd() {
   const fn = window[fnName];
   const ymid = player?.id ? String(player.id) : undefined;
 
+  let adShown = false;
   // Format 1: Rewarded Interstitial
   try {
     await fn(ymid ? { ymid, requestVar: 'rewarded_ad' } : undefined);
-    currentAdNetwork = 'monetag';
-    await claimAdReward();
-    return true;
+    adShown = true;
   } catch (err) {
     console.warn('Monetag Rewarded Interstitial fallback to Rewarded Popup:', err);
     // Format 2: Rewarded Popup ('pop')
     try {
       await fn('pop');
-      currentAdNetwork = 'monetag';
-      await claimAdReward();
-      return true;
+      adShown = true;
     } catch (popErr) {
       console.warn('Monetag Rewarded Popup also failed:', popErr);
       throw popErr;
     }
   }
+
+  if (adShown) {
+    currentAdNetwork = 'monetag';
+    await claimAdReward();
+    return true;
+  }
+  return false;
 }
 
 let onclickaShowFn = null;
@@ -2152,8 +2197,12 @@ function startCooldownTimer(seconds = 60) {
 }
 
 async function openAdPlayer() {
-  if (!online && (getTelegramInitData() || tg?.initDataUnsafe?.user)) {
+  if (!online) {
     await authenticate();
+  }
+  if (!online) {
+    toast('⚠️ Please reload the game from @mergestakeearn_bot to verify your Telegram account before earning Stars.');
+    return;
   }
   if (!hasLiveAds()) {
     toast('⚠️ No active sponsor ads right now. Stars are strictly awarded for real completed ads once partner ad networks approve campaigns.');
@@ -2262,40 +2311,29 @@ async function claimAdReward() {
     claimBtn.textContent = 'Verifying reward...';
   }
 
-  const net = currentAdNetwork || 'direct';
+  const net = currentAdNetwork || 'monetag';
   try {
-    if (!online && (getTelegramInitData() || tg?.initDataUnsafe?.user)) {
+    if (!online) {
       await authenticate();
     }
-    if (online) {
-      const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
-      player.stars = res.stars;
-      player.weeklyStars = res.weeklyStars;
-      poolData.adsWatchedToday = res.adsToday;
-      startCooldownTimer(res.cooldownSeconds || 60);
-      toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
-    } else {
-      // Re-attempt authentication one more time before rejecting
-      const reauthed = await authenticate();
-      if (reauthed) {
-        const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
-        player.stars = res.stars;
-        player.weeklyStars = res.weeklyStars;
-        poolData.adsWatchedToday = res.adsToday;
-        startCooldownTimer(res.cooldownSeconds || 60);
-        toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your weekly revenue share!`);
-      } else {
-        toast('⚠️ Open Merge Streak inside Telegram to earn verified Stars for your account.');
-        return;
-      }
+    if (!online) {
+      throw new Error('Telegram account session not verified. Please reload from @mergestakeearn_bot.');
     }
 
+    const res = await api('/ads/claim', { method: 'POST', body: { network: net } });
+    player.stars = res.stars;
+    player.weeklyStars = res.weeklyStars;
+    poolData.adsWatchedToday = res.adsToday;
+    startCooldownTimer(res.cooldownSeconds || 60);
+
+    toast(`🎉 Verified! +1 ⭐ Star credited from ${net.toUpperCase()} to your account!`);
     closeAdPlayer(true);
     try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
     refreshPoolData();
     renderProfileBase();
   } catch (err) {
-    toast(err.message);
+    console.error('Claim reward error:', err);
+    toast(`Reward error: ${err.message}`);
     if (claimBtn) {
       claimBtn.disabled = false;
       claimBtn.textContent = 'Try Claiming Again';
