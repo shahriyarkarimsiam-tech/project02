@@ -1622,12 +1622,12 @@ async function refreshPoolData() {
     const guestStars = Number(player.stars || 0);
     const guestWeekly = Number(player.weeklyStars || 0);
     const guestBalance = Number(player.usdtBalance || 0);
-    poolData.communityTotalStars = 12500 + guestWeekly;
-    poolData.communityPoolUsdt = 125.00 + (guestWeekly * 0.01);
-    poolData.estimatedValuePerStar = poolData.communityTotalStars > 0 ? (poolData.communityPoolUsdt / poolData.communityTotalStars) : 0.01;
+    poolData.communityTotalStars = 0;
+    poolData.communityPoolUsdt = 0.0;
+    poolData.estimatedValuePerStar = 0.0;
     poolData.userWeeklyStars = guestWeekly;
     poolData.userTotalStars = guestStars;
-    poolData.userEstimatedShareUsdt = guestWeekly * poolData.estimatedValuePerStar;
+    poolData.userEstimatedShareUsdt = 0.0;
     poolData.userUsdtBalance = guestBalance;
   }
 
@@ -1722,6 +1722,10 @@ function startCooldownTimer(seconds = 60) {
 }
 
 function openAdPlayer() {
+  if (!online) {
+    toast('⭐ Real Star rewards are earned inside Telegram. Open the app in Telegram to watch ads!');
+    return;
+  }
   if (currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
     return;
@@ -1923,11 +1927,11 @@ async function openAdminSettleDialog() {
   } else {
     adminSummary = {
       weekId: poolData.weekId || '2026-W46',
-      totalStars: poolData.communityTotalStars || 12500,
-      totalRevenueUsdt: (poolData.communityPoolUsdt || 125.0) * 2,
-      communityPoolUsdt: poolData.communityPoolUsdt || 125.0,
-      eligiblePlayers: 1,
-      currentRatio: poolData.estimatedValuePerStar || 0.01
+      totalStars: 0,
+      totalRevenueUsdt: 0.0,
+      communityPoolUsdt: 0.0,
+      eligiblePlayers: 0,
+      currentRatio: 0.0
     };
   }
 
@@ -2051,11 +2055,15 @@ async function boot() {
   $('today-label').textContent = new Date().toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
   if (!(await authenticate())) {
     player = { ...emptyPlayer(), ...read('ms_demo_player_v2', {}) };
+    player.stars = 0;
+    player.weeklyStars = 0;
+    player.usdtBalance = 0.0;
     recentGames = read('ms_demo_recent', []);
     daily = read('ms_demo_daily', daily);
     refreshGuestDaily();
     player.streak = localStreak();
     applyTheme(player.equippedTheme);
+    storeGuest();
   }
 
   const urlParamGame = new URLSearchParams(window.location.search).get('game');
