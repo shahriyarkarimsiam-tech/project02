@@ -175,6 +175,7 @@ async function getActiveAdNetworks(env) {
   if (env.TADS_WIDGET_ID) active.tads = { type: 'tma_widget', widgetId: env.TADS_WIDGET_ID };
   if (env.ADEXIUM_WID) active.adexium = { type: 'wid', wid: env.ADEXIUM_WID };
   if (env.GIGAPUB_APP_ID) active.gigapub = { type: 'app_id', appId: env.GIGAPUB_APP_ID };
+  if (env.ADSUN_BLOCK_ID) active.adsun = { type: 'block_id', blockId: env.ADSUN_BLOCK_ID };
   if (env.ADS_ACTIVE === 'true') active.direct = { type: 'test' };
 
   if (env.DB) {
@@ -1050,6 +1051,7 @@ async function route(request, env) {
       tadsWidgetId: activeNets.tads?.widgetId || env.TADS_WIDGET_ID || '13243',
       adexiumWid: activeNets.adexium?.wid || env.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091',
       gigapubAppId: activeNets.gigapub?.appId || env.GIGAPUB_APP_ID || '9103',
+      adsunBlockId: activeNets.adsun?.blockId || env.ADSUN_BLOCK_ID || '50194',
       richadsPubId: activeNets.richads?.pubId || env.RICHADS_PUB_ID || '1028723',
       richadsVastUrl: activeNets.richads?.vastUrl || env.RICHADS_VAST_URL || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421',
       withdrawalsEnabled: true

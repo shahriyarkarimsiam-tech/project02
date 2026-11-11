@@ -2219,6 +2219,73 @@ async function playGigaPubAd() {
   });
 }
 
+let adsunController = null;
+
+function initAdsunSDK() {
+  const blockId = String(window.ADSUN_BLOCK_ID || '50194');
+  if (window.Adsun && !adsunController) {
+    try {
+      adsunController = window.Adsun.init({ blockId, debug: false });
+      console.log('[Adsun] Controller initialized (Block ID: ' + blockId + ')');
+    } catch (e) {
+      console.warn('[Adsun] init notice:', e);
+    }
+  }
+}
+
+async function playAdsunAd() {
+  const blockId = String(window.ADSUN_BLOCK_ID || '50194');
+  toast('Loading sponsor ad from Adsun...');
+  return new Promise(async (resolve, reject) => {
+    if (!window.Adsun) {
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        if (window.Adsun) break;
+      }
+    }
+    if (!window.Adsun) {
+      return reject(new Error('Adsun SDK not available'));
+    }
+    try {
+      if (!adsunController) {
+        initAdsunSDK();
+      }
+      if (!adsunController) {
+        return reject(new Error('Adsun controller not ready'));
+      }
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('Adsun ad timeout'));
+        }
+      }, 12000);
+
+      adsunController.show()
+        .then(async (result) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            currentAdNetwork = 'adsun';
+            await claimAdReward();
+            resolve(true);
+          }
+        })
+        .catch((err) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            console.warn('[Adsun] presentation error:', err);
+            reject(err);
+          }
+        });
+    } catch (err) {
+      console.warn('[Adsun] playAdsunAd error:', err);
+      reject(err);
+    }
+  });
+}
+
 let poolData = {
   weekId: '2026-W46',
   endsAt: Math.floor(Date.now() / 1000) + 345600,
@@ -2513,11 +2580,22 @@ async function openAdPlayer() {
     }
   }
 
-  // 8. Fallback verified ad partners
+  // 8. Octonary: Adsun Telegram Ad Network (Block ID: 50194)
+  const adsunBlockId = window.ADSUN_BLOCK_ID || '50194';
+  if (adsunBlockId) {
+    try {
+      await playAdsunAd();
+      return;
+    } catch (adsunErr) {
+      console.warn('Adsun ad presentation failed:', adsunErr);
+    }
+  }
+
+  // 9. Fallback verified ad partners
   const activeNets = window.ACTIVE_AD_NETWORKS || {};
   const activeKeys = Object.keys(activeNets);
   for (const net of activeKeys) {
-    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub') continue;
+    if (net === 'adsgram' || net === 'monetag' || net === 'onclicka' || net === 'richads' || net === 'tads' || net === 'adexium' || net === 'gigapub' || net === 'adsun') continue;
     const cfg = activeNets[net];
     const adUrl = cfg?.value || cfg?.url || window.MONETAG_DIRECT_URL;
     if (adUrl && (adUrl.startsWith('http://') || adUrl.startsWith('https://'))) {
@@ -2951,12 +3029,14 @@ async function boot() {
       window.TADS_WIDGET_ID = health.tadsWidgetId || '13243';
       window.ADEXIUM_WID = health.adexiumWid || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
       window.GIGAPUB_APP_ID = health.gigapubAppId || '9103';
+      window.ADSUN_BLOCK_ID = health.adsunBlockId || '50194';
       window.ACTIVE_AD_NETWORKS = health.activeNetworks || {};
       initMonetagInApp();
       initAdsGramSDK();
       initOnClickASDK();
       initTadsSDK();
       initAdexiumSDK();
+      initAdsunSDK();
     }
   } catch {}
 
