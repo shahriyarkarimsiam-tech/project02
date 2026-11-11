@@ -1644,10 +1644,36 @@ async function refreshPoolData() {
   if ($('pool-user-total-stars')) $('pool-user-total-stars').textContent = num(player.stars || 0);
 
   if ($('wallet-usdt-balance')) $('wallet-usdt-balance').textContent = `$${Number(player.usdtBalance || 0).toFixed(2)}`;
+  if ($('quick-all-val')) $('quick-all-val').textContent = Number(player.usdtBalance || 0).toFixed(2);
   if ($('pool-daily-count')) $('pool-daily-count').textContent = `${poolData.adsWatchedToday || 0} / 20 ads watched today`;
 
   if ($('wallet-address-input') && !$('wallet-address-input').value && (poolData.payoutWallet || player.payoutWallet)) {
     $('wallet-address-input').value = poolData.payoutWallet || player.payoutWallet;
+  }
+
+  // Render past Friday settlements
+  const pastList = $('past-settlements-list');
+  if (pastList && poolData.pastSettlements && poolData.pastSettlements.length > 0) {
+    clear(pastList);
+    for (const item of poolData.pastSettlements) {
+      const row = el('div', 'past-settlement-item');
+      const main = el('div', 'past-settlement-main');
+      const badge = el('span', 'past-settlement-badge', 'FRIDAY SETTLED');
+      const info = el('div', 'past-settlement-info');
+      const dateStr = item.settledAt ? new Date(item.settledAt * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : item.weekId;
+      info.append(
+        el('strong', '', `${item.weekId} · ${dateStr}`),
+        el('small', '', `${num(item.totalStars)} Stars converted · Pool: $${Number(item.communityPoolUsdt).toFixed(2)} USDT`)
+      );
+      main.append(badge, info);
+      const rate = el('div', 'past-settlement-rate');
+      rate.append(
+        el('b', '', `$${Number(item.valuePerStar).toFixed(4)}`),
+        el('span', '', 'per 1 ⭐ Star')
+      );
+      row.append(main, rate);
+      pastList.append(row);
+    }
   }
 
   updateCooldownDisplay();
@@ -1965,7 +1991,19 @@ $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
 $('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
-}
+
+$('quick-withdraw-all-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = Math.max(1, Number(player.usdtBalance || 0)).toFixed(2);
+});
+$('quick-withdraw-1-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '1.00';
+});
+$('quick-withdraw-5-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '5.00';
+});
+$('quick-withdraw-10-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '10.00';
+});
 for (const button of document.querySelectorAll('[data-switch-game]')) {
   button.addEventListener('click', () => switchGame(button.dataset.switchGame));
 }

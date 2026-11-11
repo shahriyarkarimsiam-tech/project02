@@ -141,6 +141,9 @@ test('GET /api/ads/pool returns weekly pool data and user calculations', async (
               return null;
             }
           };
+        },
+        async all() {
+          return { results: [{ weekId: '2026-W45', totalStars: 5000, communityPoolUsdt: 50.0, valuePerStar: 0.01, settledAt: 1794200000 }] };
         }
       };
     }
@@ -153,6 +156,7 @@ test('GET /api/ads/pool returns weekly pool data and user calculations', async (
   assert.equal(response.status, 200);
   const data = await response.json();
   assert(data.weekId.startsWith('20'));
+  assert.equal(data.settlementDay, 'Friday');
   assert.equal(data.communityTotalStars, 1000);
   assert.equal(data.communityPoolUsdt, 10.0);
   assert.equal(data.estimatedValuePerStar, 0.01);
@@ -165,6 +169,7 @@ test('GET /api/ads/pool returns weekly pool data and user calculations', async (
   assert.equal(data.cooldownSecondsRemaining, 0);
   assert.equal(data.minWithdrawalUsdt, 1.00);
   assert.equal(data.payoutWallet, 'UQTestWallet');
+  assert.equal(data.pastSettlements.length, 1);
 });
 
 test('POST /api/ads/claim enforces 60s cooldown', async () => {
@@ -389,9 +394,39 @@ test('POST /api/admin/settle-week distributes 50% pool share', async () => {
   const data = await response.json();
   assert.equal(data.ok, true);
   assert.equal(data.weekId, '2026-W46');
+  assert.equal(data.settlementDay, 'Friday');
   assert.equal(data.totalRevenueUsdt, 100.0);
   assert.equal(data.communityPoolUsdt, 50.0);
   assert.equal(data.totalStars, 1000);
   assert.equal(data.valuePerStar, 0.05);
   assert(batchExecuted);
+});
+
+test('handleScheduled automatically settles Friday pool when cron fires', async () => {
+  const { handleScheduled } = await import('../src/worker.mjs');
+  let batchRan = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('FROM weekly_pools')) {
+                return { total_stars: 2000, total_revenue_usdt: 40.0, community_pool_usdt: 20.0, status: 'active' };
+              }
+              return null;
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 2);
+      batchRan = true;
+      return [];
+    }
+  };
+
+  await handleScheduled({}, { DB: mockDB });
+  assert(batchRan);
 });

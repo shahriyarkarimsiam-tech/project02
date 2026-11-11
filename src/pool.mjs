@@ -3,6 +3,8 @@ export const DAILY_AD_CAP = 20;
 export const AD_COOLDOWN_SECONDS = 60;
 export const MIN_WITHDRAWAL_USDT = 1.00;
 export const REVENUE_SHARE_RATIO = 0.50; // 50% community, 50% developer
+export const SETTLEMENT_DAY_NAME = 'Friday';
+export const SETTLEMENT_DAY_INDEX = 5; // 5 = Friday
 
 /**
  * Returns the ISO 8601 week ID in the format 'YYYY-Www' (e.g., '2026-W46').
@@ -18,19 +20,24 @@ export function currentWeekId(d = new Date()) {
 }
 
 /**
- * Returns the Unix timestamp (in seconds) for Sunday 23:59:59 UTC of the given date's week.
+ * Returns the Unix timestamp (in seconds) for Friday 23:59:59 UTC of the current weekly settlement round.
+ * If the current moment has already passed Friday 23:59:59 UTC, targets the next Friday.
  */
 export function weekEndTimestamp(d = new Date()) {
   const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const dayNum = date.getUTCDay() || 7; // Monday=1 ... Sunday=7
-  const daysUntilSunday = 7 - dayNum;
-  const sunday = new Date(date.getTime() + daysUntilSunday * DAY_SECONDS * 1000);
-  sunday.setUTCHours(23, 59, 59, 999);
-  return Math.floor(sunday.getTime() / 1000);
+  const day = date.getUTCDay(); // 0 is Sun, 5 is Fri
+  const daysUntilFriday = (5 - day + 7) % 7;
+  const target = new Date(date.getTime() + daysUntilFriday * DAY_SECONDS * 1000);
+  target.setUTCHours(23, 59, 59, 999);
+  if (d.getTime() > target.getTime()) {
+    target.setUTCDate(target.getUTCDate() + 7);
+  }
+  return Math.floor(target.getTime() / 1000);
 }
 
 /**
- * Computes value per star given community pool and total stars.
+ * Computes Friday conversion ratio: amount of USDT for 1 Star.
+ * Formula: Value Per Star = Community Pool (50%) / Total Community Stars.
  */
 export function calcStarValue(communityPoolUsdt, totalStars) {
   const pool = Number(communityPoolUsdt) || 0;
@@ -40,7 +47,8 @@ export function calcStarValue(communityPoolUsdt, totalStars) {
 }
 
 /**
- * Computes user share in USDT given user's weekly stars and value per star.
+ * Computes user's earned USDT amount from their weekly stars based on the Friday ratio.
+ * User Earn Amount = User Weekly Stars * Value Per Star.
  */
 export function calcUserShare(userWeeklyStars, valuePerStar) {
   const stars = Number(userWeeklyStars) || 0;

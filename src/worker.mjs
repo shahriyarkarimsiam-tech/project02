@@ -252,10 +252,11 @@ async function route(request, env) {
       if (!env.DB) return fail(503, 'Database unavailable');
       const weekId = currentWeekId();
       const endsAt = weekEndTimestamp();
-      const [player, pool, ads24h] = await Promise.all([
+      const [player, pool, ads24h, past] = await Promise.all([
         env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at, payout_wallet FROM players WHERE id=?').bind(uid).first(),
         env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status FROM weekly_pools WHERE week_id=?').bind(weekId).first(),
-        env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, now() - DAY).first()
+        env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, now() - DAY).first(),
+        env.DB.prepare('SELECT week_id AS weekId, total_stars AS totalStars, community_pool_usdt AS communityPoolUsdt, value_per_star AS valuePerStar, settled_at AS settledAt FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 3').all().catch(() => ({ results: [] }))
       ]);
 
       const communityTotalStars = pool?.total_stars || 0;
@@ -269,6 +270,7 @@ async function route(request, env) {
       const cooldownRemaining = Math.max(0, 60 - (now() - (player?.last_ad_at || 0)));
 
       return json({
+        settlementDay: 'Friday',
         weekId,
         endsAt,
         communityTotalStars,
@@ -282,7 +284,8 @@ async function route(request, env) {
         dailyCap: DAILY_AD_CAP,
         cooldownSecondsRemaining: cooldownRemaining,
         minWithdrawalUsdt: MIN_WITHDRAWAL_USDT,
-        payoutWallet: player?.payout_wallet || null
+        payoutWallet: player?.payout_wallet || null,
+        pastSettlements: past?.results || []
       });
     }
 
@@ -393,16 +396,14 @@ async function route(request, env) {
       const isKeyAdmin = env.ADMIN_SECRET && request.headers.get('x-admin-key') === env.ADMIN_SECRET;
       if (!isIdAdmin && !isKeyAdmin) return fail(403, 'Not authorized');
 
-      const input = await bodyJSON(request);
+      const input = await bodyJSON(request).catch(() => ({}));
       const targetWeekId = input.weekId || currentWeekId();
-      const totalRevenue = Number(input.adRevenueUsdt);
-      if (isNaN(totalRevenue) || totalRevenue < 0) {
-        return fail(400, 'Invalid adRevenueUsdt amount');
-      }
+      const poolRow = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(targetWeekId).first();
+      const totalStars = poolRow?.total_stars || 0;
+      let totalRevenue = input.adRevenueUsdt !== undefined ? Number(input.adRevenueUsdt) : Number(poolRow?.total_revenue_usdt || 0.0);
+      if (isNaN(totalRevenue) || totalRevenue < 0) totalRevenue = 0.0;
 
       const communityPool = totalRevenue * REVENUE_SHARE_RATIO;
-      const poolRow = await env.DB.prepare('SELECT total_stars FROM weekly_pools WHERE week_id=?').bind(targetWeekId).first();
-      const totalStars = poolRow?.total_stars || 0;
       const valuePerStar = calcStarValue(communityPool, totalStars);
       const stamp = now();
 
@@ -428,6 +429,7 @@ async function route(request, env) {
       return json({
         ok: true,
         weekId: targetWeekId,
+        settlementDay: 'Friday',
         totalRevenueUsdt: totalRevenue,
         communityPoolUsdt: communityPool,
         totalStars,
@@ -594,7 +596,46 @@ async function route(request, env) {
   return env.ASSETS.fetch(request);
 }
 
-export default { async fetch(request,env) {
-  try { return await route(request,env); }
-  catch(err) { console.error('Request failed:',err?.message||err); return fail(500,'Unexpected server error'); }
-} };
+export async function handleScheduled(event, env) {
+  if (!env.DB) return;
+  const weekId = currentWeekId();
+  try {
+    const poolRow = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, status FROM weekly_pools WHERE week_id=?').bind(weekId).first();
+    if (!poolRow || poolRow.status === 'settled') return;
+    const totalStars = poolRow.total_stars || 0;
+    const communityPool = Number(poolRow.community_pool_usdt || 0.0);
+    const valuePerStar = calcStarValue(communityPool, totalStars);
+    const stamp = now();
+
+    await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE weekly_pools
+        SET value_per_star = ?, status = 'settled', settled_at = ?
+        WHERE week_id = ?
+      `).bind(valuePerStar, stamp, weekId),
+      env.DB.prepare(`
+        UPDATE players
+        SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
+            weekly_stars = 0
+        WHERE weekly_stars > 0
+      `).bind(valuePerStar)
+    ]);
+    console.log(`[Friday Auto-Settlement] Week ${weekId}: ${totalStars} stars converted @ $${valuePerStar}/star ($${communityPool} pool)`);
+  } catch (err) {
+    console.error('[Friday Auto-Settlement Error]:', err);
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    try { return await route(request, env); }
+    catch (err) { console.error('Request failed:', err?.message || err); return fail(500, 'Unexpected server error'); }
+  },
+  async scheduled(event, env, ctx) {
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(handleScheduled(event, env));
+    } else {
+      await handleScheduled(event, env);
+    }
+  }
+};

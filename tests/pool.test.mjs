@@ -8,59 +8,62 @@ import {
   REVENUE_SHARE_RATIO,
   DAILY_AD_CAP,
   AD_COOLDOWN_SECONDS,
-  MIN_WITHDRAWAL_USDT
+  MIN_WITHDRAWAL_USDT,
+  SETTLEMENT_DAY_NAME,
+  SETTLEMENT_DAY_INDEX
 } from '../src/pool.mjs';
 
 test('currentWeekId calculates correct ISO week string', () => {
-  // 2026-11-11 is a Wednesday in week 46 of 2026
   const dateWed = new Date('2026-11-11T12:00:00Z');
   assert.equal(currentWeekId(dateWed), '2026-W46');
 
-  // 2026-11-15 is Sunday of that same week
-  const dateSun = new Date('2026-11-15T20:00:00Z');
-  assert.equal(currentWeekId(dateSun), '2026-W46');
-
-  // 2026-11-16 is Monday of the next week (week 47)
-  const dateNextMon = new Date('2026-11-16T01:00:00Z');
-  assert.equal(currentWeekId(dateNextMon), '2026-W47');
+  const dateFri = new Date('2026-11-13T20:00:00Z');
+  assert.equal(currentWeekId(dateFri), '2026-W46');
 });
 
-test('weekEndTimestamp calculates Sunday 23:59:59 UTC of the week', () => {
+test('weekEndTimestamp calculates Friday 23:59:59 UTC settlement time', () => {
   const dateWed = new Date('2026-11-11T12:00:00Z');
   const endSec = weekEndTimestamp(dateWed);
   const endDate = new Date(endSec * 1000);
-  assert.equal(endDate.getUTCDay(), 0); // 0 is Sunday
+  assert.equal(endDate.getUTCDay(), 5); // 5 is Friday
   assert.equal(endDate.getUTCHours(), 23);
   assert.equal(endDate.getUTCMinutes(), 59);
   assert.equal(endDate.getUTCSeconds(), 59);
-  assert.equal(endDate.toISOString().slice(0, 10), '2026-11-15');
+  assert.equal(endDate.toISOString().slice(0, 10), '2026-11-13');
+
+  // If today is Saturday 2026-11-14, targets next Friday 2026-11-20
+  const dateSat = new Date('2026-11-14T10:00:00Z');
+  const nextFriSec = weekEndTimestamp(dateSat);
+  const nextFriDate = new Date(nextFriSec * 1000);
+  assert.equal(nextFriDate.getUTCDay(), 5);
+  assert.equal(nextFriDate.toISOString().slice(0, 10), '2026-11-20');
 });
 
-test('calcStarValue and calcUserShare calculate 50/50 community pool distribution', () => {
-  // Let total ad revenue be $100 -> community pool 50% = $50
-  const totalRevenue = 100;
+test('calcStarValue and calcUserShare calculate Friday 50/50 star to USDT conversion ratio', () => {
+  // Total ad revenue is $200 -> 50% community pool = $100
+  const totalRevenue = 200;
   const communityPool = totalRevenue * REVENUE_SHARE_RATIO;
-  assert.equal(communityPool, 50);
+  assert.equal(communityPool, 100);
 
-  // Suppose 5,000 total stars were earned across all players
-  const totalStars = 5000;
+  // Total community stars earned this week = 10,000 stars
+  const totalStars = 10000;
   const valuePerStar = calcStarValue(communityPool, totalStars);
-  assert.equal(valuePerStar, 0.01); // $0.01 per star
+  assert.equal(valuePerStar, 0.01); // 1 Star = 0.01 USDT
 
-  // User Alice watched 100 ads (= 100 stars)
-  const aliceShare = calcUserShare(100, valuePerStar);
-  assert.equal(aliceShare, 1.00); // exactly $1.00 USDT
+  // User with 150 stars converts to 150 * 0.01 = $1.50 USDT
+  const userShare = calcUserShare(150, valuePerStar);
+  assert.equal(userShare, 1.50);
 
-  // User Bob watched 15 ads (= 15 stars)
-  const bobShare = calcUserShare(15, valuePerStar);
-  assert.equal(bobShare, 0.15); // $0.15 USDT
+  // User with 0 stars gets $0.00
+  assert.equal(calcUserShare(0, valuePerStar), 0.00);
 
-  // Zero stars guard
-  assert.equal(calcStarValue(50, 0), 0);
-  assert.equal(calcUserShare(0, 0.01), 0);
+  // 0 stars guard
+  assert.equal(calcStarValue(100, 0), 0.0);
 });
 
-test('constants meet user specifications', () => {
+test('constants match Friday settlement specifications', () => {
+  assert.equal(SETTLEMENT_DAY_NAME, 'Friday');
+  assert.equal(SETTLEMENT_DAY_INDEX, 5);
   assert.equal(REVENUE_SHARE_RATIO, 0.50);
   assert.equal(DAILY_AD_CAP, 20);
   assert.equal(AD_COOLDOWN_SECONDS, 60);

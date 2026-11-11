@@ -227,3 +227,21 @@ body[data-theme='midnight']{--accent:#85caff;--accent-strong:#5bb2eb;--accent-rg
   .pool-banner-row{flex-direction:column;align-items:flex-start}
   .pool-banner-metric{width:100%}
 }
+
+/* Quick Withdraw Presets */
+.quick-withdraw-row{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 14px}
+.btn-xs{font-size:10.5px;padding:6px 11px;min-height:28px;border-radius:7px;background:#152233;border:1px solid #2d4158;color:#a9bfd7;font-weight:700;transition:all .14s ease}
+.btn-xs:hover{background:#1d3148;border-color:var(--accent);color:#fff;transform:translateY(-1px)}
+#quick-withdraw-all-btn{background:#183638;border-color:#2a6660;color:#50e3c2}
+#quick-withdraw-all-btn:hover{background:#1e4844;border-color:#50e3c2}
+
+/* Past Friday Settlements */
+.past-settlements-list{display:flex;flex-direction:column;gap:10px;margin-bottom:30px}
+.past-settlement-item{background:#101a2a;border:1px solid #25374e;border-radius:12px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}
+.past-settlement-main{display:flex;align-items:center;gap:12px}
+.past-settlement-badge{background:#1a312a;color:#50e3c2;border:1px solid #275649;border-radius:8px;padding:4px 9px;font-size:10px;font-weight:800;letter-spacing:1px}
+.past-settlement-info strong{display:block;font-size:13px;color:#ecf2fa;margin-bottom:2px}
+.past-settlement-info small{font-size:11px;color:#8094aa}
+.past-settlement-rate{text-align:right}
+.past-settlement-rate b{display:block;font-size:15px;color:#fed789;font-family:Outfit,monospace}
+.past-settlement-rate span{font-size:10px;color:#7c91a7}

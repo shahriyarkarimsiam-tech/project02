@@ -53,13 +53,13 @@
               <span class="mini-label">⭐ 50% REVENUE SHARE COMMUNITY POOL</span>
               <div class="pool-banner-row">
                 <div>
-                  <h3>Watch Sponsor Ads. Earn Stars. Win USDT!</h3>
-                  <p>50% of all ad revenue is distributed to Star holders every Sunday at 23:59 UTC. Exactly 1 completed ad = 1 Star.</p>
+                  <h3>Watch Sponsor Ads. Earn Stars. Win USDT Every Friday!</h3>
+                  <p>50% of all ad revenue is converted to USDT and paid out every Friday at 23:59 UTC. Exactly 1 completed ad = 1 Star.</p>
                 </div>
                 <div class="pool-banner-metric">
                   <small>COMMUNITY POOL</small>
                   <strong id="home-pool-usdt">$0.00</strong>
-                  <span>Closes in <b id="home-pool-countdown">--</b></span>
+                  <span>Friday Payout in <b id="home-pool-countdown">--</b></span>
                 </div>
               </div>
             </div>
@@ -257,10 +257,10 @@
               <div class="surface player-panel"><div class="surface-head"><span class="mini-label">YOUR PLAYER CARD</span><span>✦</span></div><div class="profile-line"><div class="portrait" id="player-avatar">G</div><div><strong id="player-name">Guest player</strong><span id="connection-status">Local practice mode</span></div></div><div class="progress-label"><strong id="rank-title">Rookie explorer</strong><small id="rank-progress">Keep playing</small></div><div class="progress-track"><span id="progress-fill"></span></div><p class="muted-paragraph">Complete games to progress and earn virtual-only coins.</p></div>
               <div class="surface mode-side-card"><span class="mini-label">FEATURED DAILY</span><h3>Same start.<br/>Different strategy.</h3><p>One daily attempt for every Telegram player. The board resets at midnight UTC.</p><button class="text-action" data-launch-game="merge" data-launch-mode="daily">Open daily challenge ↗</button></div>
               <div class="surface ad-panel">
-                <span class="mini-label">⭐ WEEKLY REVENUE POOL</span>
+                <span class="mini-label">⭐ FRIDAY REVENUE POOL</span>
                 <div class="ad-symbol">⭐</div>
                 <h3>Watch Sponsor Ad</h3>
-                <p>1 completed ad = exactly 1 Star. Convert Stars into real USDT every Sunday!</p>
+                <p>1 completed ad = exactly 1 Star. Convert Stars into real USDT every Friday!</p>
                 <button class="btn btn-primary btn-sm" id="sidebar-watch-ad-btn">Watch Ad (+1 ⭐)</button>
                 <small id="sidebar-cooldown-text" style="display:block;margin-top:6px;font-size:10px;color:#8597ad;">Ready to watch</small>
               </div>
@@ -270,15 +270,15 @@
         </section>
 
         <!-- VIEW: WEEKLY REVENUE SHARE POOL -->
-        <section class="view" data-view="pool" aria-label="Weekly Ad Revenue Share Pool">
+        <section class="view" data-view="pool" aria-label="Friday Ad Revenue Share Pool">
           <div class="page-heading">
             <div>
               <span class="mini-label">⭐ 50% REVENUE SHARE POOL</span>
-              <h1>Weekly Community <span>Pool.</span></h1>
-              <p>Half of all ad revenue generated across the platform is pooled and distributed directly to players every Sunday at 23:59 UTC.</p>
+              <h1>Friday Community <span>Pool.</span></h1>
+              <p>Every Friday at 23:59 UTC, community Stars automatically convert into withdrawable USDT based on the week's revenue ratio! 1 Completed Ad = 1 Star.</p>
             </div>
             <div class="pool-countdown-pill">
-              <span>⏳ CLOSES IN</span>
+              <span>⏳ FRIDAY CASHOUT IN</span>
               <strong id="pool-countdown">Calculating...</strong>
             </div>
           </div>
@@ -303,9 +303,9 @@
             <div class="pool-stat-card">
               <span class="pool-stat-icon">📈</span>
               <div>
-                <small>VALUE PER STAR</small>
+                <small>FRIDAY CONVERSION RATIO</small>
                 <strong id="pool-star-value">$0.0000</strong>
-                <span>Pool divided by total stars</span>
+                <span>USDT per 1 Star this Friday</span>
               </div>
             </div>
           </div>
@@ -324,9 +324,9 @@
                   <span>⭐ in current round</span>
                 </div>
                 <div class="pool-user-metric">
-                  <small>YOUR ESTIMATED PAYOUT</small>
+                  <small>YOUR FRIDAY EARN AMOUNT</small>
                   <strong id="pool-user-share-usdt" class="payout-accent">$0.00</strong>
-                  <span>USDT on Sunday</span>
+                  <span>Converts this Friday</span>
                 </div>
                 <div class="pool-user-metric">
                   <small>LIFETIME STARS</small>
@@ -355,9 +355,16 @@
                 <span class="soft-chip live">PAYOUT ACTIVE</span>
               </div>
               <div class="wallet-balance-box">
-                <small>WITHDRAWABLE USDT BALANCE</small>
+                <small>WITHDRAWABLE USDT EARNINGS</small>
                 <strong id="wallet-usdt-balance">$0.00</strong>
-                <p>Credited automatically after each Sunday pool settlement.</p>
+                <p>Converted from your Friday stars. Ready to withdraw to your wallet!</p>
+              </div>
+
+              <div class="quick-withdraw-row">
+                <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-all-btn">Withdraw All ($<span id="quick-all-val">0.00</span>)</button>
+                <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-1-btn">$1.00</button>
+                <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-5-btn">$5.00</button>
+                <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-10-btn">$10.00</button>
               </div>
 
               <form id="wallet-withdraw-form" class="pool-withdraw-form" onsubmit="return false;">
@@ -399,9 +406,19 @@
             </div>
             <div class="pool-rule-card">
               <span class="rule-num">3</span>
-              <h4>Weekly Settlements</h4>
-              <p>Every Sunday at 23:59 UTC, the total pool is divided by all community Stars. Your share is credited directly to your withdrawable USDT balance!</p>
+              <h4>Friday Settlements & Conversion</h4>
+              <p>Every Friday at 23:59 UTC, the total pool is divided by all community Stars. Your Stars convert to USDT at this ratio and credit directly to your withdrawable balance!</p>
             </div>
+          </div>
+
+          <div class="section-head">
+            <div>
+              <span class="mini-label">PAST SETTLEMENTS</span>
+              <h2>Friday Payout History</h2>
+            </div>
+          </div>
+          <div id="past-settlements-list" class="past-settlements-list">
+            <div class="empty-state">First automated Friday settlement scheduled for this Friday at 23:59 UTC!</div>
           </div>
         </section>
 
