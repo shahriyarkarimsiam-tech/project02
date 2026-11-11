@@ -511,13 +511,18 @@ async function route(request, env) {
       if (!env.DB) return fail(503, 'Database unavailable');
       const input = await bodyJSON(request);
       const amount = Number(input.amount);
-      const network = String(input.network || '').toUpperCase();
+      const rawNetwork = String(input.network || '').toUpperCase();
+      const network = ['BEP20', 'BEP-20', 'BSC'].includes(rawNetwork) ? 'BEP-20' : rawNetwork;
       const address = String(input.address || '').trim();
 
-      if (!['TON', 'TRC20'].includes(network)) {
-        return fail(400, 'Invalid network. Supported payout networks: TON, TRC20');
+      if (!['BEP-20', 'TON', 'TRC20'].includes(network)) {
+        return fail(400, 'Invalid network. Supported payout network: BEP-20 (BNB Smart Chain)');
       }
-      if (!address || address.length < 10 || address.length > 100) {
+      if (network === 'BEP-20') {
+        if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+          return fail(400, 'Please enter a valid BEP-20 address starting with 0x (42 characters)');
+        }
+      } else if (!address || address.length < 10 || address.length > 100) {
         return fail(400, 'Please enter a valid wallet address (10-100 characters)');
       }
       if (isNaN(amount) || amount < MIN_WITHDRAWAL_USDT) {

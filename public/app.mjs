@@ -1590,7 +1590,7 @@ let poolData = {
   adsWatchedToday: 0,
   dailyCap: 20,
   cooldownSecondsRemaining: 0,
-  minWithdrawalUsdt: 1.00,
+  minWithdrawalUsdt: 10.00,
   payoutWallet: ''
 };
 
@@ -1826,7 +1826,7 @@ async function claimAdReward() {
 }
 
 async function submitWithdrawal() {
-  const network = $('wallet-network-select')?.value || 'TON';
+  const network = $('wallet-network-select')?.value || 'BEP-20';
   const address = ($('wallet-address-input')?.value || '').trim();
   const amount = Number($('wallet-amount-input')?.value);
 
@@ -1836,13 +1836,17 @@ async function submitWithdrawal() {
     statusMsg.className = 'pool-status-msg';
   }
 
-  if (!address || address.length < 10) {
-    toast('Please enter a valid destination wallet address (10+ characters).');
+  if (network === 'BEP-20' && !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    toast('Please enter a valid BEP-20 address starting with 0x (42 characters).');
+    $('wallet-address-input')?.focus();
+    return;
+  } else if (!address || address.length < 10) {
+    toast('Please enter a valid destination wallet address.');
     $('wallet-address-input')?.focus();
     return;
   }
-  if (isNaN(amount) || amount < 1.00) {
-    toast('Minimum withdrawal amount is $1.00 USDT.');
+  if (isNaN(amount) || amount < 10.00) {
+    toast('Minimum withdrawal amount is $10.00 USDT.');
     $('wallet-amount-input')?.focus();
     return;
   }
@@ -2199,16 +2203,19 @@ $('admin-confirm-checkbox')?.addEventListener('change', updateAdminCalculatedPre
 $('admin-execute-settle-btn')?.addEventListener('click', executeAdminSettlement);
 
 $('quick-withdraw-all-btn')?.addEventListener('click', () => {
-  if ($('wallet-amount-input')) $('wallet-amount-input').value = Math.max(1, Number(player.usdtBalance || 0)).toFixed(2);
-});
-$('quick-withdraw-1-btn')?.addEventListener('click', () => {
-  if ($('wallet-amount-input')) $('wallet-amount-input').value = '1.00';
-});
-$('quick-withdraw-5-btn')?.addEventListener('click', () => {
-  if ($('wallet-amount-input')) $('wallet-amount-input').value = '5.00';
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = Math.max(10, Number(player.usdtBalance || 0)).toFixed(2);
 });
 $('quick-withdraw-10-btn')?.addEventListener('click', () => {
   if ($('wallet-amount-input')) $('wallet-amount-input').value = '10.00';
+});
+$('quick-withdraw-25-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '25.00';
+});
+$('quick-withdraw-50-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '50.00';
+});
+$('quick-withdraw-100-btn')?.addEventListener('click', () => {
+  if ($('wallet-amount-input')) $('wallet-amount-input').value = '100.00';
 });
 for (const button of document.querySelectorAll('[data-switch-game]')) {
   button.addEventListener('click', () => switchGame(button.dataset.switchGame));

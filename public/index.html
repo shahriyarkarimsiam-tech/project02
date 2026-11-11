@@ -353,7 +353,7 @@
             <div class="pool-profile-cashout-banner">
               <div>
                 <strong>💳 Ready to withdraw your earnings?</strong>
-                <p>USDT earnings converted from your Stars are safely managed in your Profile with instant cashout to TON or TRC-20.</p>
+                <p>USDT earnings converted from your Stars accumulate safely in your Profile. Cash out anytime to your BEP-20 wallet (min. $10.00 USDT).</p>
               </div>
               <button type="button" class="btn btn-outline btn-sm" data-view-target="profile">Go to Profile Cashout ↗</button>
             </div>
@@ -443,31 +443,31 @@
             <div class="wallet-balance-box">
               <small>TOTAL WITHDRAWABLE USDT EARNINGS</small>
               <strong id="wallet-usdt-balance">$0.00</strong>
-              <p>Your verified ad revenue share earnings. Ready to withdraw to your TON or TRC20 wallet!</p>
+              <p>Your verified ad revenue share earnings. Accumulates week after week — withdraw anytime!</p>
             </div>
 
             <div class="quick-withdraw-row">
               <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-all-btn">Withdraw All ($<span id="quick-all-val">0.00</span>)</button>
-              <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-1-btn">$1.00</button>
-              <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-5-btn">$5.00</button>
               <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-10-btn">$10.00</button>
+              <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-25-btn">$25.00</button>
+              <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-50-btn">$50.00</button>
+              <button type="button" class="btn btn-outline btn-xs" id="quick-withdraw-100-btn">$100.00</button>
             </div>
 
             <form id="wallet-withdraw-form" class="pool-withdraw-form" onsubmit="return false;">
               <label for="wallet-network-select" class="pool-label">Payout Network</label>
               <select id="wallet-network-select" class="pool-select">
-                <option value="TON">TON (The Open Network) - Recommended</option>
-                <option value="TRC20">TRC-20 (Tron Network)</option>
+                <option value="BEP-20" selected>USDT · BEP-20 (BNB Smart Chain)</option>
               </select>
 
-              <label for="wallet-address-input" class="pool-label">Destination Wallet Address</label>
-              <input type="text" id="wallet-address-input" class="pool-input" placeholder="Paste your TON or TRC20 address..." autocomplete="off" spellcheck="false" />
+              <label for="wallet-address-input" class="pool-label">BEP-20 (BSC) Destination Wallet Address</label>
+              <input type="text" id="wallet-address-input" class="pool-input" placeholder="Paste your BEP-20 address (0x...)" autocomplete="off" spellcheck="false" />
 
               <label for="wallet-amount-input" class="pool-label">Withdrawal Amount (USDT)</label>
-              <input type="number" id="wallet-amount-input" class="pool-input" placeholder="Min. 1.00 USDT" step="0.01" min="1.00" />
+              <input type="number" id="wallet-amount-input" class="pool-input" placeholder="Min. 10.00 USDT" step="0.01" min="10.00" />
 
               <button type="submit" class="btn btn-primary wide" id="wallet-withdraw-btn">Request USDT Withdrawal ↗</button>
-              <small class="pool-hint">Minimum cashout: <b>$1.00 USDT</b>. Verified withdrawals are processed to your wallet address within 24-48 hours.</small>
+              <small class="pool-hint">Minimum cashout: <b>$10.00 USDT</b>. No weekly deadline — your balance accumulates safely over time. Withdraw anytime directly to your BEP-20 (BSC) wallet address!</small>
               <div id="wallet-status-msg" class="pool-status-msg" hidden></div>
             </form>
           </section>
@@ -502,7 +502,7 @@
       <p><b>🔮 Color Cascade (7×7):</b><br/>Tap a gem, then tap an adjacent neighbor to swap them. Line up 3 or more matching gems to trigger cascades and build combo multipliers across 30 moves!</p>
       <p><b>🧠 Memory Matrix (3×3):</b><br/>Watch the light sequence flash across the 9 neon pads. When it's your turn, tap the pads in the identical sequence. Clear rounds to earn points and advance. You have 3 lives!</p>
       <p><b>🐍 Neon Viper (16×16):</b><br/>Steer the neon viper with arrows, D-pad, or swipe gestures to collect energy pellets. Each pellet increases length and score. Avoid crashing into walls or your own tail!</p>
-      <p><b>⭐ Weekly Revenue Share Pool:</b><br/>Watch sponsor video ads to earn Stars. Exactly 1 completed ad = 1 Star. 50% of all ad revenue is divided among all star earners every Sunday at 23:59 UTC, payable in USDT (TON or TRC-20)!</p>
+      <p><b>⭐ Weekly Revenue Share Pool:</b><br/>Watch sponsor video ads to earn Stars. Exactly 1 completed ad = 1 Star. 50% of all ad revenue is divided among all star earners each round upon settlement, payable in USDT (BEP-20, min. $10.00 USDT)!</p>
       <p><b>✦ Virtual Coins:</b><br/>Earned by completing games. Use coins to unlock themes in the Theme Shop.</p>
     </div>
     <form method="dialog"><button class="btn btn-primary wide">Got it · Play Now</button></form>

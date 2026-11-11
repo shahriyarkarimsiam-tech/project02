@@ -167,7 +167,7 @@ test('GET /api/ads/pool returns weekly pool data and user calculations', async (
   assert.equal(data.adsWatchedToday, 5);
   assert.equal(data.dailyCap, 20);
   assert.equal(data.cooldownSecondsRemaining, 0);
-  assert.equal(data.minWithdrawalUsdt, 1.00);
+  assert.equal(data.minWithdrawalUsdt, 10.00);
   assert.equal(data.payoutWallet, 'UQTestWallet');
   assert.equal(data.pastSettlements.length, 1);
 });
@@ -292,7 +292,7 @@ test('POST /api/wallet/withdraw validates minimum amount and balance', async () 
         bind(...args) {
           return {
             async first() {
-              return { usdt_balance: 0.50 }; // insufficient balance
+              return { usdt_balance: 10.50 }; // insufficient balance for $15
             }
           };
         }
@@ -300,19 +300,27 @@ test('POST /api/wallet/withdraw validates minimum amount and balance', async () 
     }
   };
 
-  // Rejects below $1.00
+  // Rejects below $10.00
   const underMinResp = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ amount: 0.50, network: 'TON', address: 'UQTestAddress123456789' })
+    body: JSON.stringify({ amount: 5.00, network: 'BEP-20', address: '0x71C8363837918fb41999e07d72c3dE2C4407D871' })
   }), { DB: mockDB, SESSION_SECRET });
   assert.equal(underMinResp.status, 400);
+
+  // Rejects invalid BEP-20 address
+  const invalidAddrResp = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ amount: 10.00, network: 'BEP-20', address: 'bad-address-format' })
+  }), { DB: mockDB, SESSION_SECRET });
+  assert.equal(invalidAddrResp.status, 400);
 
   // Rejects when balance is less than requested amount
   const overBalResp = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ amount: 2.00, network: 'TON', address: 'UQTestAddress123456789' })
+    body: JSON.stringify({ amount: 15.00, network: 'BEP-20', address: '0x71C8363837918fb41999e07d72c3dE2C4407D871' })
   }), { DB: mockDB, SESSION_SECRET });
   assert.equal(overBalResp.status, 400);
   const err = await overBalResp.json();
@@ -329,7 +337,7 @@ test('POST /api/wallet/withdraw processes valid withdrawal request', async () =>
           return {
             async first() {
               if (query.includes('WHERE id=?')) {
-                return { usdt_balance: 5.00 };
+                return { usdt_balance: 25.00 };
               }
               return null;
             }
@@ -347,14 +355,14 @@ test('POST /api/wallet/withdraw processes valid withdrawal request', async () =>
   const response = await worker.fetch(new Request('https://example.com/api/wallet/withdraw', {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ amount: 2.50, network: 'TON', address: 'UQTestAddress123456789' })
+    body: JSON.stringify({ amount: 15.00, network: 'BEP-20', address: '0x71C8363837918fb41999e07d72c3dE2C4407D871' })
   }), { DB: mockDB, SESSION_SECRET });
 
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.ok, true);
-  assert.equal(data.amount, 2.50);
-  assert.equal(data.network, 'TON');
+  assert.equal(data.amount, 15.00);
+  assert.equal(data.network, 'BEP-20');
   assert.equal(data.status, 'pending');
   assert(batchCalled);
 });

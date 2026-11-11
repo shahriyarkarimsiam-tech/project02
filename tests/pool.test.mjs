@@ -67,5 +67,5 @@ test('constants match Friday settlement specifications', () => {
   assert.equal(REVENUE_SHARE_RATIO, 0.50);
   assert.equal(DAILY_AD_CAP, 20);
   assert.equal(AD_COOLDOWN_SECONDS, 60);
-  assert.equal(MIN_WITHDRAWAL_USDT, 1.00);
+  assert.equal(MIN_WITHDRAWAL_USDT, 10.00);
 });

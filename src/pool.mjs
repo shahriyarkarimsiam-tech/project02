@@ -1,7 +1,7 @@
 export const DAY_SECONDS = 86400;
 export const DAILY_AD_CAP = 20;
 export const AD_COOLDOWN_SECONDS = 60;
-export const MIN_WITHDRAWAL_USDT = 1.00;
+export const MIN_WITHDRAWAL_USDT = 10.00;
 export const REVENUE_SHARE_RATIO = 0.50; // 50% community, 50% developer
 export const SETTLEMENT_DAY_NAME = 'Friday';
 export const SETTLEMENT_DAY_INDEX = 5; // 5 = Friday
