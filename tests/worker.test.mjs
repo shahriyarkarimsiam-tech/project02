@@ -835,3 +835,40 @@ test('webhook endpoint responds to /taskkit and /earn commands', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });
 });
+
+test('webhook endpoint handles /pool, /help, /myid, /claim_admin commands without crashing', async () => {
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          if (query.includes('FROM weekly_pools')) {
+            return { total_stars: 120, community_pool_usdt: 12.0 };
+          }
+          if (query.includes('FROM players WHERE weekly_stars > 0')) {
+            return { count: 8 };
+          }
+          if (query.includes('FROM system_settings')) {
+            return null; // no admin set yet
+          }
+          return null;
+        },
+        async run() {
+          return { success: true };
+        }
+      };
+      return stmt;
+    }
+  };
+
+  const commands = ['/pool', '/help', '/myid', '/claim_admin'];
+  for (const cmd of commands) {
+    const res = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ update_id: 10, message: { chat: { id: 101 }, from: { first_name: 'Test' }, text: cmd } })
+    }), { BOT_TOKEN: 'fake_bot_token', DB: mockDB, ADMIN_TELEGRAM_ID: '101' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  }
+});

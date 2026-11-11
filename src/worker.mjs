@@ -54,6 +54,56 @@ function currentStreak(days) {
   }
   return total;
 }
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+async function sendTelegramMessage(token, { chatId, text, parseMode = 'HTML', replyMarkup = null, disablePreview = false }) {
+  if (!token || !chatId) return { ok: false, error: 'Missing token or chatId' };
+  const payload = {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: disablePreview
+  };
+  if (parseMode) payload.parse_mode = parseMode;
+  if (replyMarkup) payload.reply_markup = replyMarkup;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({ ok: false }));
+    if (!res.ok || !data.ok) {
+      console.warn('Telegram sendMessage failed:', res.status, data);
+      // Fallback: If parseMode caused an entity parse failure, retry with plain text (stripped of HTML tags)
+      if (parseMode && String(data?.description || '').toLowerCase().includes('entity')) {
+        const plainText = text.replace(/<[^>]*>/g, '');
+        const retryRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: plainText,
+            disable_web_page_preview: disablePreview,
+            reply_markup: replyMarkup
+          })
+        });
+        return await retryRes.json().catch(() => ({ ok: false }));
+      }
+    }
+    return data;
+  } catch (err) {
+    console.error('sendTelegramMessage network error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
 async function isAuthorizedAdmin(uid, env) {
   if (!uid) return false;
   const uidStr = String(uid);
@@ -133,18 +183,13 @@ async function recordReferral(env, referredId, rawRef) {
       const unlocked = count >= 10 || Boolean(updatedRef?.has_withdrawn);
       const remaining = Math.max(0, 10 - count);
       const statusText = unlocked
-        ? '🎉 *Withdrawal Unlocked for Life!* You have 10+ referrals and can withdraw USDT anytime.'
-        : `👥 You have *${count}/10* referrals. Invite *${remaining}* more friend(s) to unlock your first withdrawal!`;
+        ? '🎉 <b>Withdrawal Unlocked for Life!</b> You have 10+ referrals and can withdraw USDT anytime.'
+        : `👥 You have <b>${count}/10</b> referrals. Invite <b>${remaining}</b> more friend(s) to unlock your first withdrawal!`;
 
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: refClean,
-          text: `🎉 *New Friend Joined!*\n\nA new player joined via your unique referral link!\n\n${statusText}`,
-          parse_mode: 'Markdown'
-        })
-      }).catch(() => {});
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId: refClean,
+        text: `🎉 <b>New Friend Joined!</b>\n\nA new player joined via your unique referral link!\n\n${statusText}`
+      });
     }
   } catch (err) {
     console.warn('Referral recording failed:', err);
@@ -232,39 +277,31 @@ async function sendAdminTelegramWithdrawalNotification(env, { id, amount, networ
   }
   if (!adminChatId) return;
 
-  const playerName = player?.display_name || player?.name || 'Player';
-  const text = `🚨 *NEW USDT WITHDRAWAL REQUEST!*
+  const playerName = escapeHtml(player?.display_name || player?.name || 'Player');
+  const bscScanAddressUrl = `https://bscscan.com/address/${address}`;
+  const text = `🚨 <b>NEW USDT WITHDRAWAL REQUEST!</b>
 
-• *ID:* \`${id}\`
-• *Player:* ${playerName} (\`${player?.id || ''}\`)
-• *Amount:* *$${Number(amount).toFixed(2)} USDT*
-• *Network:* ${network} (BNB Smart Chain)
-• *Destination Wallet:*
-\`${address}\`
+• <b>ID:</b> <code>${id}</code>
+• <b>Player:</b> ${playerName} (<code>${player?.id || ''}</code>)
+• <b>Amount:</b> <b>$${Number(amount).toFixed(2)} USDT</b>
+• <b>Network:</b> ${network} (BNB Smart Chain)
+• <b>Destination Wallet:</b>
+<code>${address}</code>
 
-🔗 [View Address on BscScan](https://bscscan.com/address/${address})
+🔗 <a href="${bscScanAddressUrl}">View Address on BscScan ↗</a>
 
 ━━━━━━━━━━━━━━━━━
-📋 *Manual Transfer Action:*
-1. Send *$${Number(amount).toFixed(2)} USDT* to the address on BEP-20.
+📋 <b>Manual Transfer Action:</b>
+1. Send <b>$${Number(amount).toFixed(2)} USDT</b> to the address on BEP-20.
 2. Reply with:
-\`/payout_complete ${id} 0xYOUR_TX_HASH\`
-*(Or reply \`/payout_reject ${id} reason\` to refund user)*`;
+<code>/payout_complete ${id} 0xYOUR_TX_HASH</code>
+<i>(Or reply <code>/payout_reject ${id} reason</code> to refund user)</i>`;
 
-  try {
-    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: adminChatId,
-        text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      })
-    });
-  } catch (err) {
-    console.warn('Failed to send Telegram admin withdrawal alert:', err);
-  }
+  await sendTelegramMessage(env.BOT_TOKEN, {
+    chatId: adminChatId,
+    text,
+    disablePreview: true
+  });
 }
 
 async function executePayoutComplete(env, reqId, txHash, adminNote = null) {
@@ -283,31 +320,25 @@ async function executePayoutComplete(env, reqId, txHash, adminNote = null) {
 
   if (env.BOT_TOKEN && req.player_id) {
     const txLink = `https://bscscan.com/tx/${txHash}`;
-    const text = `🎉 *USDT Withdrawal Sent!*
+    const text = `🎉 <b>USDT Withdrawal Sent!</b>
 
 Your withdrawal request has been successfully processed!
 
-• *Amount:* *$${Number(req.amount_usdt).toFixed(2)} USDT*
-• *Network:* ${req.network} (BNB Smart Chain)
-• *Destination Wallet:*
-\`${req.wallet_address}\`
+• <b>Amount:</b> <b>$${Number(req.amount_usdt).toFixed(2)} USDT</b>
+• <b>Network:</b> ${req.network} (BNB Smart Chain)
+• <b>Destination Wallet:</b>
+<code>${req.wallet_address}</code>
 
-🔗 *Transaction Hash:*
-\`${txHash}\`
-[View on BscScan](${txLink})
+🔗 <b>Transaction Hash:</b>
+<code>${txHash}</code>
+<a href="${txLink}">View on BscScan ↗</a>
 
 Funds have been transferred to your wallet on the blockchain. Thank you for playing Merge Streak Arcade!`;
 
-    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: req.player_id,
-        text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: false
-      })
-    }).catch(err => console.warn('Failed to notify player of withdrawal completion:', err));
+    await sendTelegramMessage(env.BOT_TOKEN, {
+      chatId: req.player_id,
+      text
+    });
   }
 
   return {
@@ -342,24 +373,19 @@ async function executePayoutReject(env, reqId, reason = 'Administrative rejectio
   ]);
 
   if (env.BOT_TOKEN && req.player_id) {
-    const text = `⚠️ *Withdrawal Update*
+    const text = `⚠️ <b>Withdrawal Update</b>
 
-Your withdrawal request for *$${Number(req.amount_usdt).toFixed(2)} USDT* could not be processed.
+Your withdrawal request for <b>$${Number(req.amount_usdt).toFixed(2)} USDT</b> could not be processed.
 
-• *Reason:* ${reason}
-• *Action:* *$${Number(req.amount_usdt).toFixed(2)} USDT* has been returned to your in-game balance.
+• <b>Reason:</b> ${escapeHtml(reason)}
+• <b>Action:</b> <b>$${Number(req.amount_usdt).toFixed(2)} USDT</b> has been returned to your in-game balance.
 
 You can verify your wallet address and try submitting a new request in your Profile.`;
 
-    await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: req.player_id,
-        text,
-        parse_mode: 'Markdown'
-      })
-    }).catch(err => console.warn('Failed to notify player of withdrawal rejection:', err));
+    await sendTelegramMessage(env.BOT_TOKEN, {
+      chatId: req.player_id,
+      text
+    });
   }
 
   return {
@@ -429,7 +455,7 @@ async function handleTelegramWebhook(request, env) {
     if (!message || !message.chat?.id) return json({ ok: true });
     const chatId = message.chat.id;
     const firstName = message.from?.first_name || 'Player';
-    const safeFirstName = String(firstName).replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, ' ').trim() || 'Player';
+    const safeFirstName = escapeHtml(firstName);
     const text = String(message.text || '').trim();
     const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
 
@@ -443,14 +469,21 @@ async function handleTelegramWebhook(request, env) {
     // 1. /myid command
     if (text === '/myid') {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `👤 *Your Telegram Profile:*\n• *Chat ID:* \`${chatId}\`\n• *Name:* ${safeFirstName}\n• *Admin Role:* ${isAdmin ? '✅ Verified Platform Administrator' : 'Player'}\n\n${isAdmin ? '👑 *You have full admin authority:*\n• `/settle <revenue>` - Settle pool with ad revenue\n• `/settle_rate <rate>` - Settle with custom USDT/Star\n• `/settle_preview` - Check current stars & pool size\n• `/payouts` - View pending manual payout requests\n• `/payout_complete <id> <tx_hash>` - Confirm manual transfer\n• `/payout_reject <id> <reason>` - Reject & refund to player\n• `/set_email <email>` - Set withdrawal alert email\n• `/ads_status` - Live status of 13 ad networks\n• `/set_ad <network> <val>` - Activate approved ad network\n• `/remove_ad <network>` - Disable ad network' : '💡 To claim admin privileges on this bot, send `/claim_admin`'}`,
-          parse_mode: 'Markdown'
-        })
+      let refCount = 0;
+      let hasWithdrawn = false;
+      if (env.DB) {
+        const p = await env.DB.prepare('SELECT referrals_count, has_withdrawn FROM players WHERE id=?').bind(String(chatId)).first();
+        refCount = Number(p?.referrals_count || 0);
+        hasWithdrawn = Boolean(p?.has_withdrawn);
+      }
+      const unlocked = refCount >= 10 || hasWithdrawn;
+      const adminBlock = isAdmin
+        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/settle_rate &lt;rate&gt;</code> - Settle with custom USDT/Star\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> - Live status of 13 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
+        : `\n💡 <b>Tip:</b> Invite 10 friends to unlock your 1st withdrawal permanently! Send <code>/claim_admin</code> if you are the project owner.`;
+
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `👤 <b>Your Telegram Profile:</b>\n• <b>Chat ID:</b> <code>${chatId}</code>\n• <b>Name:</b> ${safeFirstName}\n• <b>Referrals:</b> <b>${refCount}/10</b> ${unlocked ? '✅ (Unlocked for life)' : '⏳ (1st withdrawal locked)'}\n• <b>Role:</b> ${isAdmin ? '👑 Verified Platform Administrator' : 'Player'}\n${adminBlock}`
       });
       return json({ ok: true });
     }
@@ -470,38 +503,74 @@ async function handleTelegramWebhook(request, env) {
       if (canClaim && env.DB) {
         await env.DB.prepare('INSERT INTO system_settings (key, value, updated_at) VALUES ("admin_telegram_id", ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at')
           .bind(String(chatId), now()).run();
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `👑 *Admin Rights Granted!*\n\nYou are now confirmed as the platform administrator.\n\n🛠 *Available Commands:*\n• \`/settle <revenue_usdt>\` - Settle week with total ad revenue\n• \`/settle_rate <rate_per_star>\` - Settle with exact USDT per Star\n• \`/settle_preview\` - Check current stars and pool size\n• \`/payouts\` - Check pending withdrawal requests\n• \`/payout_complete <id> <tx_hash>\` - Confirm manual transfer\n• \`/payout_reject <id> <reason>\` - Reject & refund to user\n• \`/set_email <email>\` - Set alert email for new requests`,
-            parse_mode: 'Markdown'
-          })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/settle_rate &lt;rate_per_star&gt;</code> - Settle with exact USDT per Star\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> - Live status of 13 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network`
         });
-        return json({ ok: true });
       } else {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `⛔ *Admin Claim Rejected.* An administrator is already registered or secret key was invalid.`,
-            parse_mode: 'Markdown'
-          })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Admin Claim Rejected.</b> An administrator is already registered or secret key was invalid.`
         });
-        return json({ ok: true });
       }
+      return json({ ok: true });
+    }
+
+    // 3. /pool command
+    if (text === '/pool') {
+      const weekId = currentWeekId();
+      let stars = 0, poolUsdt = '0.00', estRate = '0.0000', eligible = 0;
+      if (env.DB) {
+        const pool = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first();
+        const countRow = await env.DB.prepare('SELECT COUNT(*) AS count FROM players WHERE weekly_stars > 0').first();
+        stars = pool?.total_stars || 0;
+        poolUsdt = Number(pool?.community_pool_usdt || 0).toFixed(2);
+        estRate = stars > 0 ? (pool.community_pool_usdt / stars).toFixed(4) : '0.0000';
+        eligible = countRow?.count || 0;
+      }
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `⭐ <b>Friday Community Ad Revenue Pool</b>\n\n• <b>Round:</b> <code>${weekId}</code>\n• <b>Community Pool (50%):</b> <b>$${poolUsdt} USDT</b>\n• <b>Total Community Stars:</b> ${stars} ⭐\n• <b>Active Star Earners:</b> ${eligible} players\n• <b>Estimated Ratio:</b> ~$${estRate} USDT / Star\n• <b>Friday Settlement:</b> Every Friday at 23:59 UTC\n\n💡 <b>How it works:</b>\n1 completed real sponsor ad = 1 Star. Every Friday, 50% of all ad revenue converts into withdrawable USDT for all star earners!\n\n👇 Tap below to open the Weekly Pool:`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '⭐ Open Weekly Pool & Earn Stars', web_app: { url: `${appUrl}?view=pool` } }
+            ],
+            [
+              { text: '🎮 Play Arcade Games', web_app: { url: appUrl } }
+            ]
+          ]
+        }
+      });
+      return json({ ok: true });
+    }
+
+    // 4. /help or /guide command
+    if (text === '/help' || text === '/guide') {
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `📖 <b>Merge Streak Arcade & Earnings Guide</b>\n\n🎮 <b>5 Signature Retro Games:</b>\n• 🔢 <b>Merge Streak (4×4):</b> Slide matching numbers to double up to 2048+\n• 🧱 <b>Block Collapse (8×8):</b> Place polyomino shapes to clear lines & combos\n• 🔮 <b>Color Cascade (7×7):</b> Swap gems to match 3+ and trigger chain cascades\n• 🧠 <b>Memory Matrix (3×3):</b> Watch neon pad sequences and repeat in order\n• 🐍 <b>Neon Viper (16×16):</b> Steer the snake, collect pellets, avoid borders\n\n⭐ <b>Weekly 50/50 Revenue Share:</b>\n• Watch real sponsor ads to earn Stars (1 completed ad = 1 Star).\n• Every Friday at 23:59 UTC, 50% of ad revenue converts to withdrawable USDT.\n\n💳 <b>Cashout & Withdrawals:</b>\n• Minimum cashout: <b>$10.00 USDT</b>\n• Network: <b>BEP-20 (BNB Smart Chain)</b>\n• <b>10 Referrals Lifetime Rule:</b> Invite 10 players under your link to unlock your 1st withdrawal. Once completed, all future withdrawals are unlocked for life!\n\n💼 <b>Sister Project (@taskkitio_bot):</b>\nComplete simple online tasks & bounties to earn direct money alongside Merge Streak!\n\n👇 Tap below to start:`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '🎮 Launch Merge Streak Arcade', web_app: { url: appUrl } }
+            ],
+            [
+              { text: '💼 Launch TaskKit IO (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
+            ]
+          ]
+        }
+      });
+      return json({ ok: true });
     }
 
     // 3. /settle_preview command
     if (text === '/settle_preview') {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -512,14 +581,9 @@ async function handleTelegramWebhook(request, env) {
       const poolUsdt = Number(pool?.community_pool_usdt || 0).toFixed(2);
       const estRate = stars > 0 ? (pool.community_pool_usdt / stars).toFixed(4) : '0.0000';
 
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `📊 *Pool Preview (${weekId})*:\n• *Total Community Stars:* ${stars} ⭐\n• *Eligible Players:* ${eligible?.count || 0}\n• *Accumulated Pool (50%):* $${poolUsdt} USDT\n• *Estimated Rate:* $${estRate} USDT / Star\n\n👉 *To confirm conversion & payout:*\n• Reply \`/settle <total_ad_revenue_usdt>\`\n• Or reply \`/settle_rate <exact_rate_per_star>\``,
-          parse_mode: 'Markdown'
-        })
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `📊 <b>Pool Preview (${escapeHtml(weekId)})</b>:\n• <b>Total Community Stars:</b> ${stars} ⭐\n• <b>Eligible Players:</b> ${eligible?.count || 0}\n• <b>Accumulated Pool (50%):</b> $${poolUsdt} USDT\n• <b>Estimated Rate:</b> $${estRate} USDT / Star\n\n👉 <b>To confirm conversion & payout:</b>\n• Reply <code>/settle &lt;total_ad_revenue_usdt&gt;</code>\n• Or reply <code>/settle_rate &lt;exact_rate_per_star&gt;</code>`
       });
       return json({ ok: true });
     }
@@ -531,10 +595,9 @@ async function handleTelegramWebhook(request, env) {
     if (settleRevMatch || settleRateMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -577,14 +640,9 @@ async function handleTelegramWebhook(request, env) {
         `).bind(valuePerStar)
       ]);
 
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `🎉 *Confirmed! Stars Converted into USDT!*\n\n• *Round:* ${weekId}\n• *Total Stars Converted:* ${totalStars} ⭐\n• *Conversion Ratio:* 1 ⭐ = *\$${valuePerStar.toFixed(4)} USDT*\n• *Total Community Pool:* \$${communityPool.toFixed(2)} USDT\n\n✅ All players with weekly stars have been credited with withdrawable USDT!`,
-          parse_mode: 'Markdown'
-        })
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `🎉 <b>Confirmed! Stars Converted into USDT!</b>\n\n• <b>Round:</b> ${escapeHtml(weekId)}\n• <b>Total Stars Converted:</b> ${totalStars} ⭐\n• <b>Conversion Ratio:</b> 1 ⭐ = <b>$${valuePerStar.toFixed(4)} USDT</b>\n• <b>Total Community Pool:</b> $${communityPool.toFixed(2)} USDT\n\n✅ All players with weekly stars have been credited with withdrawable USDT!`
       });
       return json({ ok: true });
     }
@@ -593,10 +651,9 @@ async function handleTelegramWebhook(request, env) {
     if (text === '/payouts') {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -605,25 +662,20 @@ async function handleTelegramWebhook(request, env) {
       ).all();
       const list = pending.results || [];
       if (list.length === 0) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `✅ No pending withdrawal requests! All payouts are settled.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `✅ <b>No pending withdrawal requests!</b> All payouts are settled.`
         });
         return json({ ok: true });
       }
-      let msg = `📋 *Pending Withdrawal Requests (${list.length}):*\n\n`;
+      let msg = `📋 <b>Pending Withdrawal Requests (${list.length}):</b>\n\n`;
       for (const item of list) {
-        const uName = item.display_name || 'Player';
-        const uHandle = item.username ? ` (@${item.username})` : '';
-        msg += `• *ID:* \`${item.id}\`\n  *User:* ${uName}${uHandle}\n  *Amount:* \$${Number(item.amount_usdt).toFixed(2)} USDT (${item.network})\n  *Wallet:* \`${item.wallet_address}\`\n\n`;
+        const uName = escapeHtml(item.display_name || 'Player');
+        const uHandle = item.username ? ` (@${escapeHtml(item.username)})` : '';
+        msg += `• <b>ID:</b> <code>${escapeHtml(item.id)}</code>\n  <b>User:</b> ${uName}${uHandle}\n  <b>Amount:</b> $${Number(item.amount_usdt).toFixed(2)} USDT (${escapeHtml(item.network)})\n  <b>Wallet:</b> <code>${escapeHtml(item.wallet_address)}</code>\n\n`;
       }
-      msg += `👉 *To confirm manual payout:*\n\`/payout_complete <id> <tx_hash>\`\n\n👉 *To reject & refund:*\n\`/payout_reject <id> <reason>\``;
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
-      });
+      msg += `👉 <b>To confirm manual payout:</b>\n<code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code>\n\n👉 <b>To reject &amp; refund:</b>\n<code>/payout_reject &lt;id&gt; &lt;reason&gt;</code>`;
+      await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: msg });
       return json({ ok: true });
     }
 
@@ -632,10 +684,9 @@ async function handleTelegramWebhook(request, env) {
     if (completeMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -643,20 +694,14 @@ async function handleTelegramWebhook(request, env) {
       const txHash = completeMatch[2];
       try {
         const res = await executePayoutComplete(env, reqId, txHash);
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `✅ *Payout Confirmed & Completed!*\n\n• *ID:* \`${reqId}\`\n• *Amount:* \$${Number(res.amountUsdt).toFixed(2)} USDT\n• *TX Hash:* \`${txHash}\`\n\nPlayer has been notified with the BscScan transaction link.`,
-            parse_mode: 'Markdown'
-          })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `✅ <b>Payout Confirmed &amp; Completed!</b>\n\n• <b>ID:</b> <code>${escapeHtml(reqId)}</code>\n• <b>Amount:</b> $${Number(res.amountUsdt).toFixed(2)} USDT\n• <b>TX Hash:</b> <code>${escapeHtml(txHash)}</code>\n\nPlayer has been notified with the BscScan transaction link.`
         });
       } catch (err) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `❌ Failed: ${err.message}` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `❌ <b>Failed:</b> ${escapeHtml(err.message)}`
         });
       }
       return json({ ok: true });
@@ -667,10 +712,9 @@ async function handleTelegramWebhook(request, env) {
     if (rejectMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -678,20 +722,14 @@ async function handleTelegramWebhook(request, env) {
       const reason = rejectMatch[2] || 'Administrative rejection';
       try {
         const res = await executePayoutReject(env, reqId, reason);
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `⚠️ *Withdrawal Rejected & Refunded!*\n\n• *ID:* \`${reqId}\`\n• *Refunded:* \$${Number(res.amountUsdt).toFixed(2)} USDT returned to user balance.\n• *Reason:* ${reason}\n\nPlayer has been notified.`,
-            parse_mode: 'Markdown'
-          })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⚠️ <b>Withdrawal Rejected &amp; Refunded!</b>\n\n• <b>ID:</b> <code>${escapeHtml(reqId)}</code>\n• <b>Refunded:</b> $${Number(res.amountUsdt).toFixed(2)} USDT returned to user balance.\n• <b>Reason:</b> ${escapeHtml(reason)}\n\nPlayer has been notified.`
         });
       } catch (err) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `❌ Failed: ${err.message}` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `❌ <b>Failed:</b> ${escapeHtml(err.message)}`
         });
       }
       return json({ ok: true });
@@ -702,10 +740,9 @@ async function handleTelegramWebhook(request, env) {
     if (emailMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -713,40 +750,29 @@ async function handleTelegramWebhook(request, env) {
       await env.DB.prepare(
         'INSERT INTO system_settings (key, value, updated_at) VALUES ("admin_email", ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at'
       ).bind(email, now()).run();
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `✅ *Notification Email Updated!*\n\nNew withdrawal request alerts will be delivered to:\n\`${email}\``,
-          parse_mode: 'Markdown'
-        })
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `✅ <b>Notification Email Updated!</b>\n\nNew withdrawal request alerts will be delivered to:\n<code>${escapeHtml(email)}</code>`
       });
       return json({ ok: true });
     }
 
     // 9. /taskkit or /earn or /tasks command
     if (text === '/taskkit' || text === '/earn' || text === '/tasks') {
-      const sendRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `💼 *TaskKit IO* (@taskkitio_bot) — *Official Sister Earning Project*\n\nWant to earn even more money alongside Merge Streak?\n\n*TaskKit* is our dedicated microtask platform where you get paid for quick online actions:\n• 📝 Complete fast social & engagement microtasks\n• 📱 Test new apps and visit verified Web3 sponsors\n• 💵 Earn real cash & crypto rewards\n• ⚡ 100% free to join and start earning today!\n\n👇 *Tap below to launch TaskKit and boost your daily income:*`,
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '💼 Launch TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
-              ],
-              [
-                { text: '🎮 Play Merge Streak Arcade', web_app: { url: appUrl } }
-              ]
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `💼 <b>TaskKit IO (@taskkitio_bot) — Official Sister Earning Project</b>\n\nWant to earn even more money alongside Merge Streak?\n\n<b>TaskKit</b> is our dedicated microtask platform where you get paid for quick online actions:\n• 📝 Complete fast social &amp; engagement microtasks\n• 📱 Test new apps and visit verified Web3 sponsors\n• 💵 Earn real cash &amp; crypto rewards\n• ⚡ 100% free to join and start earning today!\n\n👇 <b>Tap below to launch TaskKit and boost your daily income:</b>`,
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              { text: '💼 Launch TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
+            ],
+            [
+              { text: '🎮 Play Merge Streak Arcade', web_app: { url: appUrl } }
             ]
-          }
-        })
+          ]
+        }
       });
-      if (!sendRes.ok) console.error('Telegram /taskkit send error:', sendRes.status, await sendRes.text());
       return json({ ok: true });
     }
 
@@ -754,10 +780,9 @@ async function handleTelegramWebhook(request, env) {
     if (text === '/ads_status') {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
@@ -777,21 +802,17 @@ async function handleTelegramWebhook(request, env) {
         ['OpenAD Protocol', 'openad'],
         ['Adsterra', 'adsterra']
       ];
-      let msg = `📡 *Ad Networks Live Status (13 Platforms):*\n\n`;
+      let msg = `📡 <b>Ad Networks Live Status (13 Platforms):</b>\n\n`;
       let liveCount = 0;
       for (const [name, key] of platforms) {
         const isLive = Boolean(activeNets[key]);
         if (isLive) liveCount++;
-        msg += `• *${name}:* ${isLive ? '🟢 LIVE (Ads Active)' : '⏸ Awaiting Approval'}\n`;
+        msg += `• <b>${name}:</b> ${isLive ? '🟢 LIVE (Ads Active)' : '⏸ Awaiting Approval'}\n`;
       }
-      msg += `\n*Summary:* ${liveCount} of 13 networks approved and serving real ads.\n`;
-      msg += `\n👉 *To activate approved ads for any network:*\n\`/set_ad <network> <zone_id_or_url>\`\nExample: \`/set_ad adsgram 4128\`\nExample: \`/set_ad monetag https://.../link\`\n\n👉 *To disable:* \`/remove_ad <network>\``;
+      msg += `\n<b>Summary:</b> ${liveCount} of 13 networks approved and serving real ads.\n`;
+      msg += `\n👉 <b>To activate approved ads for any network:</b>\n<code>/set_ad &lt;network&gt; &lt;zone_id_or_url&gt;</code>\nExample: <code>/set_ad adsgram 4128</code>\nExample: <code>/set_ad monetag https://.../link</code>\n\n👉 <b>To disable:</b> <code>/remove_ad &lt;network&gt;</code>`;
 
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' })
-      });
+      await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: msg });
       return json({ ok: true });
     }
 
@@ -800,20 +821,18 @@ async function handleTelegramWebhook(request, env) {
     if (setAdMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
       const rawNet = setAdMatch[1].toLowerCase().trim();
       const val = setAdMatch[2].trim();
       if (!SUPPORTED_AD_NETWORKS.includes(rawNet)) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `❌ Unknown network "${rawNet}". Supported networks: ${SUPPORTED_AD_NETWORKS.join(', ')}` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `❌ Unknown network "${escapeHtml(rawNet)}". Supported networks: ${SUPPORTED_AD_NETWORKS.join(', ')}`
         });
         return json({ ok: true });
       }
@@ -822,14 +841,9 @@ async function handleTelegramWebhook(request, env) {
         'INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at'
       ).bind(`ad_${rawNet}`, val, now()).run();
 
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `✅ *Ad Network Activated: ${rawNet.toUpperCase()}*\n\n• *Config:* \`${val}\`\n• *Status:* 🟢 LIVE\n\nThe mini app has automatically enabled real ads for this network. When users complete real ads, Stars will be awarded automatically!`,
-          parse_mode: 'Markdown'
-        })
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `✅ <b>Ad Network Activated: ${escapeHtml(rawNet.toUpperCase())}</b>\n\n• <b>Config:</b> <code>${escapeHtml(val)}</code>\n• <b>Status:</b> 🟢 LIVE\n\nThe mini app has automatically enabled real ads for this network. When users complete real ads, Stars will be awarded automatically!`
       });
       return json({ ok: true });
     }
@@ -839,62 +853,50 @@ async function handleTelegramWebhook(request, env) {
     if (removeAdMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
-        await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: `⛔ Unauthorized. Send /claim_admin if you are the project owner.` })
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
         });
         return json({ ok: true });
       }
       const rawNet = removeAdMatch[1].toLowerCase().trim();
       await env.DB.prepare('DELETE FROM system_settings WHERE key = ?').bind(`ad_${rawNet}`).run();
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: `⚠️ *Ad Network Deactivated: ${rawNet.toUpperCase()}*\n\nReal ads from this network are disabled in the mini app.`,
-          parse_mode: 'Markdown'
-        })
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `⚠️ <b>Ad Network Deactivated: ${escapeHtml(rawNet.toUpperCase())}</b>\n\nReal ads from this network are disabled in the mini app.`
       });
       return json({ ok: true });
     }
 
-    const welcomeRes = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: `👋 Hello *${safeFirstName}*!\n\n🎮 Welcome to *Merge Streak Arcade*!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 *Merge Streak* (4x4 2048 puzzle)\n• 🧱 *Block Collapse* (8x8 line clearing puzzle)\n• 🔮 *Color Cascade* (7x7 match-3 gem puzzle)\n• 🧠 *Memory Matrix* (3x3 pattern sequence memory)\n• 🐍 *Neon Viper* (16x16 classic reflex snake)\n\n⭐ *Weekly Ad Revenue Share:*\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 *Earn More With TaskKit* (@taskkitio_bot):\nComplete microtasks & bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: '🔢 Play Merge Streak', web_app: { url: `${appUrl}?game=merge` } }
-            ],
-            [
-              { text: '🧱 Play Block Collapse', web_app: { url: `${appUrl}?game=blocks` } }
-            ],
-            [
-              { text: '🔮 Play Color Cascade', web_app: { url: `${appUrl}?game=cascade` } }
-            ],
-            [
-              { text: '🧠 Play Memory Matrix', web_app: { url: `${appUrl}?game=memory` } }
-            ],
-            [
-              { text: '🐍 Play Neon Viper', web_app: { url: `${appUrl}?game=viper` } }
-            ],
-            [
-              { text: '⭐ Weekly Revenue Pool', web_app: { url: `${appUrl}?view=pool` } }
-            ],
-            [
-              { text: '💼 Earn on TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
-            ]
+    await sendTelegramMessage(env.BOT_TOKEN, {
+      chatId,
+      text: `👋 Hello <b>${safeFirstName}</b>!\n\n🎮 Welcome to <b>Merge Streak Arcade</b>!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 <b>Merge Streak</b> (4×4 2048 puzzle)\n• 🧱 <b>Block Collapse</b> (8×8 line clearing puzzle)\n• 🔮 <b>Color Cascade</b> (7×7 match-3 gem puzzle)\n• 🧠 <b>Memory Matrix</b> (3×3 pattern sequence memory)\n• 🐍 <b>Neon Viper</b> (16×16 classic reflex snake)\n\n⭐ <b>Weekly Ad Revenue Share:</b>\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 <b>Earn More With TaskKit (@taskkitio_bot):</b>\nComplete microtasks &amp; bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            { text: '🔢 Play Merge Streak', web_app: { url: `${appUrl}?game=merge` } }
+          ],
+          [
+            { text: '🧱 Play Block Collapse', web_app: { url: `${appUrl}?game=blocks` } }
+          ],
+          [
+            { text: '🔮 Play Color Cascade', web_app: { url: `${appUrl}?game=cascade` } }
+          ],
+          [
+            { text: '🧠 Play Memory Matrix', web_app: { url: `${appUrl}?game=memory` } }
+          ],
+          [
+            { text: '🐍 Play Neon Viper', web_app: { url: `${appUrl}?game=viper` } }
+          ],
+          [
+            { text: '⭐ Weekly Revenue Pool', web_app: { url: `${appUrl}?view=pool` } }
+          ],
+          [
+            { text: '💼 Earn on TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
           ]
-        }
-      })
+        ]
+      }
     });
-    if (!welcomeRes.ok) console.error('Telegram welcome send error:', welcomeRes.status, await welcomeRes.text());
   } catch (err) {
     console.error('Webhook error:', err);
   }
@@ -1587,15 +1589,10 @@ export async function handleScheduled(event, env) {
     }
 
     if (adminId && env.BOT_TOKEN) {
-      await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: adminId,
-          text: `⏰ *Friday Ad Revenue Settlement Reminder*\n\n• *Round:* \`${weekId}\`\n• *Total Community Stars:* \`${totalStars} ⭐\`\n• *Accumulated Pool (50%):* \`$${communityPool.toFixed(2)} USDT\`\n• *Estimated Rate:* \`$${estRate} USDT / Star\`\n\n⚠️ *Per protocol, conversion requires your confirmation:*\n• Reply \`/settle <total_ad_revenue_usdt>\`\n• Or reply \`/settle_rate <exact_rate_per_star>\`\n• Or open the Mini App Admin Settlement Console.`,
-          parse_mode: 'Markdown'
-        })
-      }).catch(err => console.error('[Reminder Alert fetch failed]:', err));
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId: adminId,
+        text: `⏰ <b>Friday Ad Revenue Settlement Reminder</b>\n\n• <b>Round:</b> <code>${escapeHtml(weekId)}</code>\n• <b>Total Community Stars:</b> <code>${totalStars} ⭐</code>\n• <b>Accumulated Pool (50%):</b> <code>$${communityPool.toFixed(2)} USDT</code>\n• <b>Estimated Rate:</b> <code>$${estRate} USDT / Star</code>\n\n⚠️ <b>Per protocol, conversion requires your confirmation:</b>\n• Reply <code>/settle &lt;total_ad_revenue_usdt&gt;</code>\n• Or reply <code>/settle_rate &lt;exact_rate_per_star&gt;</code>\n• Or open the Mini App Admin Settlement Console.`
+      }).catch(err => console.error('[Reminder Alert send failed]:', err));
     }
     console.log(`[Friday Reminder Sent] Week ${weekId}: ${totalStars} stars awaiting manual admin confirmation.`);
   } catch (err) {
