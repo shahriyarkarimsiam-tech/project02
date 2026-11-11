@@ -520,7 +520,7 @@ async function handleTelegramWebhook(request, env) {
       }
       const unlocked = refCount >= 10 || hasWithdrawn;
       const adminBlock = isAdmin
-        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
+        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star holders\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
         : `\n💡 <b>Tip:</b> Invite 10 friends to unlock your 1st withdrawal permanently! Send <code>/claim_admin</code> if you are the project owner.`;
 
       await sendTelegramMessage(env.BOT_TOKEN, {
@@ -547,7 +547,7 @@ async function handleTelegramWebhook(request, env) {
           .bind(String(chatId), now()).run();
         await sendTelegramMessage(env.BOT_TOKEN, {
           chatId,
-          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network`
+          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star earners\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network`
         });
       } else {
         await sendTelegramMessage(env.BOT_TOKEN, {
@@ -616,22 +616,109 @@ async function handleTelegramWebhook(request, env) {
         });
         return json({ ok: true });
       }
-      const weekId = currentWeekId();
-      const pool = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first();
-      const eligible = await env.DB.prepare('SELECT COUNT(*) AS count, SUM(weekly_stars) AS totalStars FROM players WHERE weekly_stars > 0').first();
-      const stars = pool?.total_stars || eligible?.totalStars || 0;
-      const eligibleCount = eligible?.count || 0;
-      const poolUsdt = Number(pool?.community_pool_usdt || 0).toFixed(2);
-      const estRate = stars > 0 ? (pool.community_pool_usdt / stars).toFixed(4) : '0.0000';
+      let activePool = null;
+      try {
+        const stmt = env.DB.prepare("SELECT week_id, total_stars, community_pool_usdt FROM weekly_pools WHERE status='active' ORDER BY week_id ASC LIMIT 1");
+        activePool = typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.();
+      } catch {}
+
+      const weekId = activePool?.week_id || currentWeekId();
+      let eligible = { count: 0, totalStars: 0 };
+      try {
+        const stmt = env.DB.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(weekly_stars), 0) AS totalStars FROM players WHERE weekly_stars > 0');
+        eligible = (typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.()) || { count: 0, totalStars: 0 };
+      } catch {}
+
+      const stars = Number(eligible?.totalStars || activePool?.total_stars || 0);
+      const eligibleCount = Number(eligible?.count || 0);
+      let impressionsCount = 0;
+      try {
+        const imp = await env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE week_id=?').bind(weekId).first();
+        impressionsCount = imp?.count || 0;
+      } catch {}
+
+      let topUsers = { results: [] };
+      try {
+        const stmt = env.DB.prepare('SELECT display_name, username, weekly_stars, stars FROM players WHERE weekly_stars > 0 ORDER BY weekly_stars DESC LIMIT 5');
+        topUsers = (typeof stmt.bind === 'function' ? await stmt.bind().all?.() : await stmt.all?.()) || { results: [] };
+      } catch {}
+
+      let topText = '';
+      if (topUsers?.results?.length > 0) {
+        topText = '\n\n👑 <b>Top Active Star Earners:</b>\n' + topUsers.results.map((u, i) => {
+          const name = escapeHtml(u.display_name || 'Player');
+          const h = u.username ? ` (@${escapeHtml(u.username)})` : '';
+          return `${i + 1}. <b>${name}</b>${h}: <b>${u.weekly_stars} ⭐</b>`;
+        }).join('\n');
+      }
 
       await sendTelegramMessage(env.BOT_TOKEN, {
         chatId,
-        text: `📊 <b>Weekly Pool Status (${escapeHtml(weekId)})</b>:\n• <b>Active Community Stars:</b> ${stars} ⭐\n• <b>Eligible Players:</b> ${eligibleCount}\n• <b>Estimated Pool (50%):</b> $${poolUsdt} USDT\n• <b>Estimated Rate:</b> $${estRate} USDT / Star\n\n👉 <b>To convert stars into withdrawable USDT:</b>\n• Send <code>/rate 0.02</code> (or whatever rate you choose)\n• Or send <code>/settle &lt;ad_revenue_usdt&gt;</code>`
+        text: `📊 <b>Friday Community Star Audit (${escapeHtml(weekId)})</b>\n\n• <b>Active Weekly Stars:</b> <b>${stars} ⭐</b>\n• <b>Eligible Players:</b> <b>${eligibleCount}</b>\n• <b>Verified Ad Impressions:</b> ${impressionsCount}\n\n💡 <b>Simulated Conversions:</b>\n• At <b>$0.01</b> / ⭐ → Total Payout: <b>$${(stars * 0.01).toFixed(2)} USDT</b>\n• At <b>$0.02</b> / ⭐ → Total Payout: <b>$${(stars * 0.02).toFixed(2)} USDT</b>\n• At <b>$0.03</b> / ⭐ → Total Payout: <b>$${(stars * 0.03).toFixed(2)} USDT</b>\n• At <b>$0.05</b> / ⭐ → Total Payout: <b>$${(stars * 0.05).toFixed(2)} USDT</b>${topText}\n\n👉 <b>To execute conversion & vanish stars:</b>\nSend <code>/rate &lt;rate&gt;</code> (for example: <code>/rate 0.02</code>)`
       });
       return json({ ok: true });
     }
 
-    // 4. /rate, /settle_rate, or /settle command
+    // 4. /audit_stars command
+    if (text === '/audit_stars' || text === '/audit') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
+        });
+        return json({ ok: true });
+      }
+      const weekId = currentWeekId();
+      let sumRow = null, poolRow = null, impRow = null, userCount = null;
+      try {
+        const stmt = env.DB.prepare('SELECT COALESCE(SUM(weekly_stars), 0) AS sumWeekly, COALESCE(SUM(stars), 0) AS sumTotal, COUNT(*) AS countWithStars FROM players WHERE weekly_stars > 0');
+        sumRow = typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.();
+      } catch {}
+      try {
+        poolRow = await env.DB.prepare('SELECT total_stars, community_pool_usdt, status FROM weekly_pools WHERE week_id=?').bind(weekId).first();
+      } catch {}
+      try {
+        impRow = await env.DB.prepare('SELECT COUNT(*) AS totalImps, COUNT(DISTINCT player_id) AS distinctUsers FROM ad_impressions WHERE week_id=?').bind(weekId).first();
+      } catch {}
+      try {
+        const stmt = env.DB.prepare('SELECT COUNT(*) AS totalPlayers FROM players');
+        userCount = typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.();
+      } catch {}
+
+      const playerWeeklySum = sumRow?.sumWeekly || 0;
+      const poolWeeklyStars = poolRow?.total_stars || 0;
+      const isConsistent = playerWeeklySum === poolWeeklyStars || (poolWeeklyStars === 0 && playerWeeklySum === 0);
+
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `🔍 <b>Database Star Consistency Audit (${escapeHtml(weekId)})</b>\n\n• <b>Total Registered Players:</b> ${userCount?.totalPlayers || 0}\n• <b>Active Star Holders:</b> ${sumRow?.countWithStars || 0} players\n• <b>Sum of Player Weekly Stars:</b> <b>${playerWeeklySum} ⭐</b>\n• <b>Weekly Pool Record:</b> <b>${poolWeeklyStars} ⭐</b>\n• <b>Ad Impressions Logged:</b> ${impRow?.totalImps || 0}\n• <b>Lifetime Stars Accumulated:</b> ${sumRow?.sumTotal || 0} ⭐\n\n${isConsistent ? '✅ <b>100% Consistent!</b> Player stars and weekly pool match perfectly.' : 'ℹ️ <b>Active Discrepancy Protected:</b> Settlement engine will use exact player stars count.'}`
+      });
+      return json({ ok: true });
+    }
+
+    // 5. /top_stars command
+    if (text === '/top_stars' || text === '/leaders_stars') {
+      let top = { results: [] };
+      try {
+        const stmt = env.DB.prepare('SELECT display_name, username, weekly_stars, stars, COALESCE(usdt_balance, 0.0) AS usdt_balance FROM players ORDER BY weekly_stars DESC, stars DESC LIMIT 10');
+        top = (typeof stmt.bind === 'function' ? await stmt.bind().all?.() : await stmt.all?.()) || { results: [] };
+      } catch {}
+      const rows = top?.results || [];
+      if (rows.length === 0) {
+        await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: 'No players have earned stars yet.' });
+        return json({ ok: true });
+      }
+      let msg = '⭐ <b>Top 10 Star Leaders:</b>\n\n';
+      rows.forEach((p, i) => {
+        const u = p.username ? ` (@${escapeHtml(p.username)})` : '';
+        msg += `${i + 1}. <b>${escapeHtml(p.display_name || 'Player')}</b>${u}\n   • Active: <b>${p.weekly_stars} ⭐</b> | Lifetime: ${p.stars} ⭐ | Balance: $${Number(p.usdt_balance).toFixed(2)} USDT\n`;
+      });
+      await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: msg });
+      return json({ ok: true });
+    }
+
+    // 6. /rate, /settle_rate, or /settle command
     const rateDirectMatch = text.match(/^\/rate(?:\s+([\d.]+))?$/);
     const settleRateMatch = text.match(/^\/settle_rate(?:\s+([\d.]+))?$/);
     const settleRevMatch = text.match(/^\/settle(?:\s+([\d.]+))?$/);
@@ -655,11 +742,30 @@ async function handleTelegramWebhook(request, env) {
         return json({ ok: true });
       }
 
-      const weekId = currentWeekId();
+      let activePool = null;
+      try {
+        const stmt = env.DB.prepare("SELECT week_id, total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE status='active' ORDER BY week_id ASC LIMIT 1");
+        activePool = typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.();
+      } catch {}
+
+      const weekId = activePool?.week_id || currentWeekId();
       const pool = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(weekId).first();
-      const eligibleRow = await env.DB.prepare('SELECT COUNT(*) AS count, SUM(weekly_stars) AS totalActiveStars FROM players WHERE weekly_stars > 0').first();
-      const totalStars = pool?.total_stars || eligibleRow?.totalActiveStars || 0;
-      const eligibleCount = eligibleRow?.count || 0;
+      let eligibleRow = { count: 0, totalActiveStars: 0 };
+      try {
+        const stmt = env.DB.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(weekly_stars), 0) AS totalActiveStars FROM players WHERE weekly_stars > 0');
+        eligibleRow = (typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.()) || { count: 0, totalActiveStars: 0 };
+      } catch {}
+
+      const totalStars = Number(eligibleRow?.totalActiveStars || pool?.total_stars || 0);
+      const eligibleCount = Number(eligibleRow?.count || 0);
+
+      if (totalStars <= 0 || eligibleCount <= 0) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⚠️ <b>No Active Stars to Settle:</b>\n\nThere are currently 0 active weekly stars awaiting conversion in round <code>${escapeHtml(weekId)}</code>. All stars have already been converted, or no ads have been watched yet.`
+        });
+        return json({ ok: true });
+      }
 
       let valuePerStar = 0.0;
       let communityPool = 0.0;
@@ -667,45 +773,58 @@ async function handleTelegramWebhook(request, env) {
 
       if (rateDirectMatch && rateDirectMatch[1]) {
         valuePerStar = Math.max(0, Number(rateDirectMatch[1]));
-        communityPool = totalStars * valuePerStar;
-        totalRevenue = communityPool * 2;
+        communityPool = Number((totalStars * valuePerStar).toFixed(6));
+        totalRevenue = Number((communityPool * 2).toFixed(6));
       } else if (settleRateMatch && settleRateMatch[1]) {
         valuePerStar = Math.max(0, Number(settleRateMatch[1]));
-        communityPool = totalStars * valuePerStar;
-        totalRevenue = communityPool * 2;
+        communityPool = Number((totalStars * valuePerStar).toFixed(6));
+        totalRevenue = Number((communityPool * 2).toFixed(6));
       } else if (settleRevMatch && settleRevMatch[1]) {
         const val = Math.max(0, Number(settleRevMatch[1]));
-        // If admin typed a rate (e.g. 0.02 where val < 1.0), treat as direct rate per star
         if (val < 1.0) {
           valuePerStar = val;
-          communityPool = totalStars * valuePerStar;
-          totalRevenue = communityPool * 2;
+          communityPool = Number((totalStars * valuePerStar).toFixed(6));
+          totalRevenue = Number((communityPool * 2).toFixed(6));
         } else {
           totalRevenue = val;
-          communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+          communityPool = Number((totalRevenue * REVENUE_SHARE_RATIO).toFixed(6));
           valuePerStar = calcStarValue(communityPool, totalStars);
         }
       } else {
         totalRevenue = Number(pool?.total_revenue_usdt || 0.0);
-        communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+        communityPool = Number((totalRevenue * REVENUE_SHARE_RATIO).toFixed(6));
         valuePerStar = calcStarValue(communityPool, totalStars);
       }
 
       const stamp = now();
       await env.DB.batch([
         env.DB.prepare(`
+          INSERT INTO settlement_payouts (id, week_id, player_id, stars_converted, rate_per_star, usdt_credited, settled_at)
+          SELECT
+            (? || '_' || id || '_' || ?) AS id,
+            ? AS week_id,
+            id AS player_id,
+            weekly_stars AS stars_converted,
+            ? AS rate_per_star,
+            ROUND(weekly_stars * ?, 6) AS usdt_credited,
+            ? AS settled_at
+          FROM players
+          WHERE weekly_stars > 0
+        `).bind(weekId, String(stamp), weekId, valuePerStar, valuePerStar, stamp),
+        env.DB.prepare(`
           INSERT INTO weekly_pools (week_id, total_revenue_usdt, community_pool_usdt, total_stars, value_per_star, status, settled_at)
           VALUES (?, ?, ?, ?, ?, 'settled', ?)
           ON CONFLICT(week_id) DO UPDATE SET
             total_revenue_usdt = excluded.total_revenue_usdt,
             community_pool_usdt = excluded.community_pool_usdt,
+            total_stars = excluded.total_stars,
             value_per_star = excluded.value_per_star,
             status = 'settled',
             settled_at = excluded.settled_at
         `).bind(weekId, totalRevenue, communityPool, totalStars, valuePerStar, stamp),
         env.DB.prepare(`
           UPDATE players
-          SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
+          SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
               weekly_stars = 0
           WHERE weekly_stars > 0
         `).bind(valuePerStar)
@@ -1165,14 +1284,25 @@ async function route(request, env) {
       if (!env.DB) return fail(503, 'Database unavailable');
       const weekId = currentWeekId();
       const endsAt = weekEndTimestamp();
-      const [player, pool, ads24h, past] = await Promise.all([
+
+      const getActiveStars = async () => {
+        try {
+          const s = env.DB.prepare('SELECT COALESCE(SUM(weekly_stars), 0) AS totalActiveStars FROM players WHERE weekly_stars > 0');
+          return (typeof s.first === 'function' ? await s.first() : (typeof s.bind === 'function' ? await s.bind().first() : null)) || { totalActiveStars: 0 };
+        } catch {
+          return { totalActiveStars: 0 };
+        }
+      };
+
+      const [player, pool, ads24h, past, activeStarsRow] = await Promise.all([
         env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at, payout_wallet FROM players WHERE id=?').bind(uid).first(),
         env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status FROM weekly_pools WHERE week_id=?').bind(weekId).first(),
         env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, now() - DAY).first(),
-        env.DB.prepare('SELECT week_id AS weekId, total_stars AS totalStars, community_pool_usdt AS communityPoolUsdt, value_per_star AS valuePerStar, settled_at AS settledAt FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 3').all().catch(() => ({ results: [] }))
+        env.DB.prepare('SELECT week_id AS weekId, total_stars AS totalStars, community_pool_usdt AS communityPoolUsdt, value_per_star AS valuePerStar, settled_at AS settledAt FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 3').all().catch(() => ({ results: [] })),
+        getActiveStars()
       ]);
 
-      const communityTotalStars = pool?.total_stars || 0;
+      const communityTotalStars = Math.max(Number(pool?.total_stars || 0), Number(activeStarsRow?.totalActiveStars || 0));
       const communityPoolUsdt = pool?.community_pool_usdt || 0.0;
       const valuePerStar = calcStarValue(communityPoolUsdt, communityTotalStars);
       const userWeeklyStars = player?.weekly_stars || 0;
@@ -1483,19 +1613,24 @@ async function route(request, env) {
       const input = await bodyJSON(request).catch(() => ({}));
       const targetWeekId = input.weekId || currentWeekId();
       const poolRow = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt FROM weekly_pools WHERE week_id=?').bind(targetWeekId).first();
-      const totalStars = poolRow?.total_stars || 0;
+      let activeRow = { count: 0, totalActiveStars: 0 };
+      try {
+        const s = env.DB.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(weekly_stars), 0) AS totalActiveStars FROM players WHERE weekly_stars > 0');
+        activeRow = (typeof s.first === 'function' ? await s.first() : (typeof s.bind === 'function' ? await s.bind().first() : null)) || { count: 0, totalActiveStars: 0 };
+      } catch {}
+      const totalStars = Math.max(Number(poolRow?.total_stars || 0), Number(activeRow?.totalActiveStars || 0));
       let totalRevenue = 0.0;
       let communityPool = 0.0;
       let valuePerStar = 0.0;
 
       if (input.valuePerStar !== undefined && !isNaN(Number(input.valuePerStar)) && Number(input.valuePerStar) >= 0 && input.adRevenueUsdt === undefined) {
         valuePerStar = Number(input.valuePerStar);
-        communityPool = totalStars * valuePerStar;
-        totalRevenue = communityPool * 2;
+        communityPool = Number((totalStars * valuePerStar).toFixed(6));
+        totalRevenue = Number((communityPool * 2).toFixed(6));
       } else {
         totalRevenue = input.adRevenueUsdt !== undefined ? Number(input.adRevenueUsdt) : Number(poolRow?.total_revenue_usdt || 0.0);
         if (isNaN(totalRevenue) || totalRevenue < 0) totalRevenue = 0.0;
-        communityPool = totalRevenue * REVENUE_SHARE_RATIO;
+        communityPool = Number((totalRevenue * REVENUE_SHARE_RATIO).toFixed(6));
         valuePerStar = input.valuePerStar !== undefined && !isNaN(Number(input.valuePerStar)) ? Number(input.valuePerStar) : calcStarValue(communityPool, totalStars);
       }
 
@@ -1503,18 +1638,32 @@ async function route(request, env) {
 
       await env.DB.batch([
         env.DB.prepare(`
+          INSERT INTO settlement_payouts (id, week_id, player_id, stars_converted, rate_per_star, usdt_credited, settled_at)
+          SELECT
+            (? || '_' || id || '_' || ?) AS id,
+            ? AS week_id,
+            id AS player_id,
+            weekly_stars AS stars_converted,
+            ? AS rate_per_star,
+            ROUND(weekly_stars * ?, 6) AS usdt_credited,
+            ? AS settled_at
+          FROM players
+          WHERE weekly_stars > 0
+        `).bind(targetWeekId, String(stamp), targetWeekId, valuePerStar, valuePerStar, stamp),
+        env.DB.prepare(`
           INSERT INTO weekly_pools (week_id, total_revenue_usdt, community_pool_usdt, total_stars, value_per_star, status, settled_at)
           VALUES (?, ?, ?, ?, ?, 'settled', ?)
           ON CONFLICT(week_id) DO UPDATE SET
             total_revenue_usdt = excluded.total_revenue_usdt,
             community_pool_usdt = excluded.community_pool_usdt,
+            total_stars = excluded.total_stars,
             value_per_star = excluded.value_per_star,
             status = 'settled',
             settled_at = excluded.settled_at
         `).bind(targetWeekId, totalRevenue, communityPool, totalStars, valuePerStar, stamp),
         env.DB.prepare(`
           UPDATE players
-          SET usdt_balance = COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?),
+          SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
               weekly_stars = 0
           WHERE weekly_stars > 0
         `).bind(valuePerStar)

@@ -489,7 +489,7 @@ test('POST /api/admin/settle-week distributes 50% pool share', async () => {
       };
     },
     async batch(stmts) {
-      assert.equal(stmts.length, 2);
+      assert.equal(stmts.length, 3);
       batchExecuted = true;
       return [];
     }
@@ -530,7 +530,7 @@ test('POST /api/admin/settle-week supports direct custom valuePerStar', async ()
       };
     },
     async batch(stmts) {
-      assert.equal(stmts.length, 2);
+      assert.equal(stmts.length, 3);
       batchExecuted = true;
       return [];
     }
@@ -1060,4 +1060,67 @@ test('POST & GET /api/ads/postback handles Monetag ymid and estimated_price macr
   const dupData = await dupRes.json();
   assert.equal(dupData.ok, true);
   assert.equal(dupData.duplicate, true);
+});
+
+test('POST /api/admin/settle-week commits 3-statement atomic batch with settlement_payouts', async () => {
+  const auth = await authHeader('9999');
+  let capturedQueries = [];
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          if (query.includes('FROM weekly_pools')) return { total_stars: 400 };
+          if (query.includes('FROM players WHERE weekly_stars > 0')) return { count: 10, totalActiveStars: 400 };
+          return null;
+        }
+      };
+      return stmt;
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 3);
+      capturedQueries = stmts;
+      return [];
+    }
+  };
+
+  const response = await worker.fetch(new Request('https://example.com/api/admin/settle-week', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ weekId: '2026-W46', valuePerStar: 0.02 })
+  }), { DB: mockDB, SESSION_SECRET, ADMIN_TELEGRAM_ID: '9999' });
+
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.totalStars, 400);
+  assert.equal(data.valuePerStar, 0.02);
+  assert.equal(data.communityPoolUsdt, 8.0);
+});
+
+test('webhook handles /audit_stars and /top_stars without errors', async () => {
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) { return stmt; },
+        async first() {
+          return { sumWeekly: 500, sumTotal: 1200, countWithStars: 25, total_stars: 500, totalImps: 500, totalPlayers: 100 };
+        },
+        async all() {
+          return { results: [{ display_name: 'Alice', username: 'alice', weekly_stars: 50, stars: 120, usdt_balance: 5.0 }] };
+        }
+      };
+      return stmt;
+    }
+  };
+
+  for (const cmd of ['/audit_stars', '/top_stars']) {
+    const res = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ update_id: 11, message: { chat: { id: 777 }, from: { first_name: 'Admin' }, text: cmd } })
+    }), { BOT_TOKEN: 'fake_bot_token', DB: mockDB, ADMIN_TELEGRAM_ID: '777' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  }
 });
