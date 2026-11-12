@@ -2195,13 +2195,15 @@ async function playAdexiumAd() {
 async function playGigaPubAd() {
   toast('Loading sponsor ad from GigaPub...');
   return new Promise(async (resolve, reject) => {
-    if (typeof window.showGiga !== 'function') {
+    let showFn = typeof window.showGiga === 'function' ? window.showGiga : (typeof window.GigaPub?.show === 'function' ? window.GigaPub.show : null);
+    if (!showFn) {
       for (let i = 0; i < 20; i++) {
         await new Promise(r => setTimeout(r, 100));
-        if (typeof window.showGiga === 'function') break;
+        showFn = typeof window.showGiga === 'function' ? window.showGiga : (typeof window.GigaPub?.show === 'function' ? window.GigaPub.show : null);
+        if (showFn) break;
       }
     }
-    if (typeof window.showGiga !== 'function') {
+    if (!showFn) {
       return reject(new Error('GigaPub SDK not available'));
     }
     let resolved = false;
@@ -2212,7 +2214,7 @@ async function playGigaPubAd() {
       }
     }, 8000);
 
-    window.showGiga()
+    Promise.resolve(showFn())
       .then(async (res) => {
         if (!resolved) {
           resolved = true;
@@ -2543,16 +2545,16 @@ const hasLiveAds = () => Boolean(
 );
 
 const AD_PROVIDERS = [
-  // Tier 1: Confirmed Active & Approved (Ranked Loop: 1. Monetag -> 2. Adsterra -> 3. Adexium)
+  // Tier 1: Confirmed Active & Approved (Ranked Loop: 1. Monetag -> 2. Adsterra -> 3. Adexium -> 4. GigaPub -> 5. AdsGram)
   { id: 'monetag', name: 'Monetag', play: playMonetagAd, rank: 1, defaultActive: true },
   { id: 'adsterra', name: 'Adsterra', play: playAdsterraAd, rank: 2, defaultActive: true },
   { id: 'adexium', name: 'Adexium', play: playAdexiumAd, rank: 3, defaultActive: true },
+  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd, rank: 4, defaultActive: true },
+  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd, rank: 5, defaultActive: true },
 
-  // Tier 2: Pending Networks (Automatically join active rotation as soon as approved)
-  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd, rank: 4, defaultActive: false },
-  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 5, defaultActive: false },
-  { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 6, defaultActive: false },
-  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd, rank: 7, defaultActive: false },
+  // Tier 2: Pending Networks (Auto-probe & auto-join upon serving)
+  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 6, defaultActive: false },
+  { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 7, defaultActive: false },
   { id: 'tads', name: 'TADS', play: playTadsAd, rank: 8, defaultActive: false },
   { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 9, defaultActive: false }
 ];
@@ -2562,10 +2564,14 @@ function getAutoApprovedSet() {
     const raw = localStorage.getItem('ms_active_networks_ranking');
     if (raw) {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const s = new Set(arr);
+        s.add('gigapub');
+        return s;
+      }
     }
   } catch {}
-  return new Set(['monetag', 'adsterra', 'adexium']);
+  return new Set(['monetag', 'adsterra', 'adexium', 'gigapub', 'adsgram']);
 }
 
 function syncApprovedNetworks(serverApprovedList) {

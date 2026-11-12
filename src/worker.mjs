@@ -166,7 +166,7 @@ const SUPPORTED_AD_NETWORKS = [
   'taskkit'
 ];
 
-export const DEFAULT_APPROVED_NETWORKS = ['monetag', 'adsterra', 'adexium'];
+export const DEFAULT_APPROVED_NETWORKS = ['monetag', 'adsterra', 'adexium', 'gigapub', 'adsgram'];
 
 async function getAllSafe(db, query, ...args) {
   if (!db) return { results: [] };
