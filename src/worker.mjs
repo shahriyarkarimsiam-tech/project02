@@ -166,6 +166,72 @@ const SUPPORTED_AD_NETWORKS = [
   'taskkit'
 ];
 
+export const DEFAULT_APPROVED_NETWORKS = ['monetag', 'adsterra', 'adexium'];
+
+async function getAllSafe(db, query, ...args) {
+  if (!db) return { results: [] };
+  try {
+    const stmt = db.prepare(query);
+    const bound = args.length > 0 && typeof stmt.bind === 'function' ? stmt.bind(...args) : stmt;
+    if (typeof bound.all === 'function') return await bound.all();
+    if (typeof stmt.all === 'function') return await stmt.all();
+    return { results: [] };
+  } catch {
+    return { results: [] };
+  }
+}
+
+async function getFirstSafe(db, query, ...args) {
+  if (!db) return null;
+  try {
+    const stmt = db.prepare(query);
+    const bound = args.length > 0 && typeof stmt.bind === 'function' ? stmt.bind(...args) : stmt;
+    if (typeof bound.first === 'function') return await bound.first();
+    if (typeof stmt.first === 'function') return await stmt.first();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getApprovedAdNetworks(env) {
+  const approved = new Set(DEFAULT_APPROVED_NETWORKS);
+  if (!env?.DB) return Array.from(approved);
+  try {
+    // 1. Explicitly approved networks from system_settings
+    const setting = await getFirstSafe(env.DB, "SELECT value FROM system_settings WHERE key='approved_ad_networks'");
+    if (setting?.value) {
+      try {
+        const list = JSON.parse(setting.value);
+        if (Array.isArray(list)) list.forEach(n => approved.add(String(n).toLowerCase()));
+      } catch {}
+    }
+    // 2. Automatically promote any network that has at least 1 verified impression recorded in ad_impressions!
+    const activeFromDb = await getAllSafe(env.DB, 'SELECT DISTINCT ad_network FROM ad_impressions');
+    for (const row of activeFromDb?.results || []) {
+      if (row.ad_network && SUPPORTED_AD_NETWORKS.includes(String(row.ad_network).toLowerCase())) {
+        approved.add(String(row.ad_network).toLowerCase());
+      }
+    }
+  } catch {}
+  return Array.from(approved);
+}
+
+export async function addApprovedAdNetwork(env, networkId) {
+  if (!env?.DB || !networkId) return;
+  const net = String(networkId).toLowerCase();
+  if (!SUPPORTED_AD_NETWORKS.includes(net)) return;
+  try {
+    const current = await getApprovedAdNetworks(env);
+    if (!current.includes(net)) {
+      current.push(net);
+      await env.DB.prepare(
+        'INSERT INTO system_settings (key, value, updated_at) VALUES ("approved_ad_networks", ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at'
+      ).bind(JSON.stringify(current), now()).run();
+    }
+  } catch {}
+}
+
 async function getActiveAdNetworks(env) {
   const active = {};
   if (env.ADSGRAM_BLOCK_ID) active.adsgram = { type: 'sdk', blockId: env.ADSGRAM_BLOCK_ID };
@@ -520,7 +586,7 @@ async function handleTelegramWebhook(request, env) {
       }
       const unlocked = refCount >= 10 || hasWithdrawn;
       const adminBlock = isAdmin
-        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star holders\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
+        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star holders\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
         : `\n💡 <b>Tip:</b> Invite 10 friends to unlock your 1st withdrawal permanently! Send <code>/claim_admin</code> if you are the project owner.`;
 
       await sendTelegramMessage(env.BOT_TOKEN, {
@@ -547,7 +613,7 @@ async function handleTelegramWebhook(request, env) {
           .bind(String(chatId), now()).run();
         await sendTelegramMessage(env.BOT_TOKEN, {
           chatId,
-          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star earners\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> - Live status of 9 ad networks\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Activate approved ad network`
+          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star earners\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID`
         });
       } else {
         await sendTelegramMessage(env.BOT_TOKEN, {
@@ -1090,6 +1156,73 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
+    // 13. /approve_network <network> or /add_network <network>
+    const approveNetMatch = text.match(/^\/(?:approve_network|add_network)\s+([a-zA-Z0-9_-]+)$/);
+    if (approveNetMatch) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
+        });
+        return json({ ok: true });
+      }
+      const rawNet = approveNetMatch[1].toLowerCase().trim();
+      if (!SUPPORTED_AD_NETWORKS.includes(rawNet)) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `❌ Unknown network "${escapeHtml(rawNet)}". Supported: ${SUPPORTED_AD_NETWORKS.join(', ')}`
+        });
+        return json({ ok: true });
+      }
+      await addApprovedAdNetwork(env, rawNet);
+      const allApproved = await getApprovedAdNetworks(env);
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `🎉 <b>Ad Network Approved & Joined Active Loop!</b>\n\n• <b>Network:</b> <code>${escapeHtml(rawNet.toUpperCase())}</code>\n• <b>Status:</b> 🟢 ACTIVE IN ROTATION\n\n<b>Current Active Loop:</b>\n${allApproved.map((n, i) => `${i + 1}. ${escapeHtml(n.toUpperCase())}`).join('\n')}\n\nAll users across the platform will now automatically rotate through this ad network!`
+      });
+      return json({ ok: true });
+    }
+
+    // 14. /ad_status or /networks
+    if (text === '/ad_status' || text === '/networks' || text === '/ads_status') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
+        });
+        return json({ ok: true });
+      }
+      const approvedList = await getApprovedAdNetworks(env);
+      const counts = await getAllSafe(env.DB, 'SELECT ad_network, COUNT(*) as count FROM ad_impressions GROUP BY ad_network');
+      const countMap = {};
+      for (const r of counts?.results || []) {
+        if (r.ad_network) countMap[r.ad_network.toLowerCase()] = r.count;
+      }
+      const allNets = [
+        'monetag', 'adsterra', 'adexium', 'adsgram',
+        'onclicka', 'adsun', 'gigapub', 'tads', 'richads'
+      ];
+      let msg = `📊 <b>Official Ad Networks Status &amp; Ranking</b>\n\n`;
+      msg += `<b>🟢 Approved &amp; Active Loop (${approvedList.length}):</b>\n`;
+      approvedList.forEach((n, idx) => {
+        const c = countMap[n] || 0;
+        msg += `#${idx + 1} <b>${escapeHtml(n.toUpperCase())}</b> · ${c} verified impressions\n`;
+      });
+      const pendingNets = allNets.filter(n => !approvedList.includes(n));
+      if (pendingNets.length > 0) {
+        msg += `\n<b>🟡 Pending Networks (Auto-Probing ${pendingNets.length}):</b>\n`;
+        pendingNets.forEach(n => {
+          const c = countMap[n] || 0;
+          msg += `• <b>${escapeHtml(n.toUpperCase())}</b> (${c} ads served) — <i>auto-joins upon first completed ad</i>\n`;
+        });
+      }
+      msg += `\n💡 <i>To instantly force-approve any network:</i>\n<code>/approve_network &lt;name&gt;</code>`;
+      await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: msg });
+      return json({ ok: true });
+    }
+
     await sendTelegramMessage(env.BOT_TOKEN, {
       chatId,
       text: `👋 Hello <b>${safeFirstName}</b>!\n\n🎮 Welcome to <b>Merge Streak Arcade</b>!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 <b>Merge Streak</b> (4×4 2048 puzzle)\n• 🧱 <b>Block Collapse</b> (8×8 line clearing puzzle)\n• 🔮 <b>Color Cascade</b> (7×7 match-3 gem puzzle)\n• 🧠 <b>Memory Matrix</b> (3×3 pattern sequence memory)\n• 🐍 <b>Neon Viper</b> (16×16 classic reflex snake)\n\n⭐ <b>Weekly Ad Revenue Share:</b>\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 <b>Earn More With TaskKit (@taskkitio_bot):</b>\nComplete microtasks &amp; bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
@@ -1226,6 +1359,7 @@ async function route(request, env) {
       version: '0.3.0',
       adsEnabled: hasLive,
       activeNetworks: activeNets,
+      approvedNetworks: await getApprovedAdNetworks(env),
       adsgramBlockId: activeNets.adsgram?.blockId || activeNets.adsgram?.value || env.ADSGRAM_BLOCK_ID || null,
       monetagZoneId: activeNets.monetag?.zoneId || activeNets.monetag?.value || env.MONETAG_ZONE_ID || null,
       onclickaSpotId: activeNets.onclicka?.spotId || activeNets.onclicka?.value || env.ONCLICKA_SPOT_ID || null,
@@ -1388,6 +1522,7 @@ async function route(request, env) {
         userUsdtBalance,
         adsWatchedToday,
         dailyCap: null,
+        approvedNetworks: await getApprovedAdNetworks(env),
         cooldownSecondsRemaining: cooldownRemaining,
         minWithdrawalUsdt: MIN_WITHDRAWAL_USDT,
         payoutWallet: player?.payout_wallet || null,
@@ -1455,6 +1590,10 @@ async function route(request, env) {
       ]);
 
       const updated = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance FROM players WHERE id=?').bind(uid).first();
+      // Auto-promote network to approved list in DB if not already present
+      await addApprovedAdNetwork(env, adNetwork);
+      const approvedNetworks = await getApprovedAdNetworks(env);
+
       return json({
         ok: true,
         network: adNetwork,
@@ -1463,7 +1602,8 @@ async function route(request, env) {
         weeklyStars: updated ? updated.weekly_stars : (player?.weekly_stars || 0) + 1,
         adsToday: adsToday + 1,
         dailyCap: null,
-        cooldownSeconds: 60
+        cooldownSeconds: 60,
+        approvedNetworks
       });
     }
 

@@ -1136,3 +1136,39 @@ test('webhook handles /audit_stars and /top_stars without errors', async () => {
     assert.deepEqual(await res.json(), { ok: true });
   }
 });
+
+test('webhook handles /ad_status and /approve_network to auto-promote platforms', async () => {
+  let insertedKey = null;
+  const mockDB = {
+    prepare(query) {
+      const stmt = {
+        bind(...args) {
+          if (query.includes('INSERT INTO system_settings')) {
+            insertedKey = args[0];
+          }
+          return stmt;
+        },
+        async first() {
+          return null;
+        },
+        async all() {
+          return { results: [{ ad_network: 'monetag', count: 10 }] };
+        },
+        async run() {
+          return { success: true };
+        }
+      };
+      return stmt;
+    }
+  };
+
+  for (const cmd of ['/ad_status', '/networks', '/approve_network adsgram']) {
+    const res = await worker.fetch(new Request('https://example.com/api/telegram/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ update_id: 12, message: { chat: { id: 777 }, from: { first_name: 'Admin' }, text: cmd } })
+    }), { BOT_TOKEN: 'fake_bot_token', DB: mockDB, ADMIN_TELEGRAM_ID: '777' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+  }
+});

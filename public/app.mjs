@@ -2424,6 +2424,9 @@ async function refreshPoolData() {
     try {
       const res = await api('/ads/pool');
       poolData = { ...poolData, ...res };
+      if (Array.isArray(res?.approvedNetworks)) {
+        syncApprovedNetworks(res.approvedNetworks);
+      }
       player.stars = res.userTotalStars;
       player.weeklyStars = res.userWeeklyStars;
       player.usdtBalance = res.userUsdtBalance;
@@ -2565,13 +2568,33 @@ function getAutoApprovedSet() {
   return new Set(['monetag', 'adsterra', 'adexium']);
 }
 
+function syncApprovedNetworks(serverApprovedList) {
+  if (!Array.isArray(serverApprovedList) || serverApprovedList.length === 0) return;
+  const currentSet = getAutoApprovedSet();
+  let changed = false;
+  for (const net of serverApprovedList) {
+    const clean = String(net).toLowerCase();
+    if (!currentSet.has(clean)) {
+      currentSet.add(clean);
+      changed = true;
+    }
+  }
+  if (changed) {
+    try {
+      localStorage.setItem('ms_active_networks_ranking', JSON.stringify(Array.from(currentSet)));
+      console.log('[AdRotation] 🔄 Synced approved networks with server:', Array.from(currentSet));
+    } catch {}
+  }
+}
+
 function markNetworkApproved(networkId) {
   try {
     const set = getAutoApprovedSet();
-    if (!set.has(networkId)) {
-      set.add(networkId);
+    const clean = String(networkId).toLowerCase();
+    if (!set.has(clean)) {
+      set.add(clean);
       localStorage.setItem('ms_active_networks_ranking', JSON.stringify(Array.from(set)));
-      console.log(`[AdRotation] 🎉 Network "${networkId}" officially joined the active rotation loop!`);
+      console.log(`[AdRotation] 🎉 Network "${clean}" officially joined the active rotation loop!`);
     }
   } catch {}
 }
@@ -2685,10 +2708,36 @@ async function openAdPlayer() {
     ...activeList.slice(0, rotIdx)
   ];
 
-  // Full waterfall: active loop first, followed by pending networks (which auto-join upon serving)
-  const fullWaterfall = [...rotatedActive, ...pendingList];
+  // Auto-Discovery Probe System:
+  // Every cycle through activeList (when rotIdx === 0) AND there are pending networks:
+  // Probe the next pending network (AdsGram -> OnClickA -> Adsun -> GigaPub -> TADS -> RichAds)
+  // at the very front of the waterfall!
+  // If the pending network is ready and completes an ad, it automatically permanently joins the active loop.
+  // If it has no fill yet, the catch immediately falls back to rotatedActive[0] with zero user delay!
+  let fullWaterfall;
+  let probeTarget = null;
+  if (pendingList.length > 0 && rotIdx === 0) {
+    let probeIdx = 0;
+    try {
+      const savedProbe = localStorage.getItem('ms_pending_probe_idx');
+      probeIdx = savedProbe !== null ? parseInt(savedProbe, 10) : 0;
+      if (isNaN(probeIdx) || probeIdx < 0) probeIdx = 0;
+    } catch {
+      probeIdx = 0;
+    }
+    probeTarget = pendingList[probeIdx % pendingList.length];
+    try {
+      localStorage.setItem('ms_pending_probe_idx', String((probeIdx + 1) % pendingList.length));
+    } catch {}
 
-  console.log(`[AdRotation] Priority turn: #${rotIdx + 1} (${rotatedActive[0]?.name}). Active loop: ${activeList.map(p => p.name).join(' -> ')}`);
+    const remainingPending = pendingList.filter(p => p.id !== probeTarget.id);
+    fullWaterfall = [probeTarget, ...rotatedActive, ...remainingPending];
+    console.log(`[AdRotation] 🔍 Auto-Discovery Probe Turn: Testing pending candidate "${probeTarget.name}" (${probeTarget.id}) first...`);
+  } else {
+    fullWaterfall = [...rotatedActive, ...pendingList];
+  }
+
+  console.log(`[AdRotation] Priority turn: #${rotIdx + 1} (${fullWaterfall[0]?.name}). Active loop: ${activeList.map(p => p.name).join(' -> ')}`);
 
   for (const provider of fullWaterfall) {
     try {
@@ -2744,6 +2793,9 @@ async function claimAdReward() {
       player.stars = res.stars;
       player.weeklyStars = res.weeklyStars;
       poolData.adsWatchedToday = res.adsToday;
+      if (Array.isArray(res.approvedNetworks)) {
+        syncApprovedNetworks(res.approvedNetworks);
+      }
       write('ms_demo_player_v2', player);
       renderProfileBase();
       refreshPoolData();
