@@ -12,7 +12,7 @@ const stamp = () => Math.floor(Date.now() / 1000);
 const num = n => Number(n || 0).toLocaleString('en-US');
 const names = { home: 'Overview', play: 'Play game', pool: 'Weekly Pool', challenges: 'Challenges', rankings: 'Rankings', shop: 'Theme shop', profile: 'My profile' };
 const ranks = [{ at: 0, title: 'Rookie explorer' }, { at: 1, title: 'Bronze merger' }, { at: 5, title: 'Silver strategist' }, { at: 15, title: 'Golden master' }, { at: 40, title: 'Diamond legend' }];
-const emptyPlayer = () => ({ id: 'demo', name: 'Player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '', referralsCount: 0, referralsRequired: 10, hasWithdrawn: false, canWithdraw: false, referralLink: 'https://t.me/mergestakeearn_bot' });
+const emptyPlayer = () => ({ id: 'demo', name: 'Player', coins: 0, bestScore: 0, bestTile: 0, bestBlocksScore: 0, bestCascadeScore: 0, bestMemoryScore: 0, bestViperScore: 0, gamesPlayed: 0, streak: 0, equippedTheme: 'mint', ownedThemes: ['mint'], stars: 0, weeklyStars: 0, usdtBalance: 0.0, lastAdAt: 0, payoutWallet: '', referralsCount: 0, referralsRequired: 10, hasWithdrawn: false, canWithdraw: false, referralLink: 'https://t.me/mergestakeearn_bot', claimedWelcomeBonus: false });
 
 let player = emptyPlayer(), online = true, view = 'home';
 
@@ -229,6 +229,25 @@ function renderProfileBase() {
     $('profile-ref-lock-notice').textContent = `⚠️ Your 1st withdrawal is locked until you have at least 10 users joined under your link (Current: ${refCount}/10). Once completed, you never need referrals again!`;
   }
 
+  // Cashout Goal Progress ($10.00 Minimum)
+  const currentUsdt = Number(player.usdtBalance || 0);
+  const minCashout = 10.00;
+  const cashoutPct = Math.min(100, Math.round((currentUsdt / minCashout) * 100));
+  if ($('cashout-progress-current')) $('cashout-progress-current').textContent = `$${currentUsdt.toFixed(2)}`;
+  if ($('cashout-progress-pct')) $('cashout-progress-pct').textContent = `${cashoutPct}%`;
+  if ($('cashout-goal-bar')) $('cashout-goal-bar').style.width = `${cashoutPct}%`;
+  if ($('cashout-goal-tip')) {
+    if (currentUsdt >= 10.00) {
+      $('cashout-goal-tip').textContent = '🎉 You have reached the $10.00 minimum cashout goal! Enter your BEP-20 wallet below to request payout.';
+    } else if (player.claimedWelcomeBonus) {
+      const remaining = (10.00 - currentUsdt).toFixed(2);
+      $('cashout-goal-tip').textContent = `⭐ You are ${cashoutPct}% toward your $10.00 goal ($${remaining} remaining). Watch ads to earn Stars that convert to USDT around Friday!`;
+    } else {
+      $('cashout-goal-tip').textContent = '🎁 Claim your $5.00 USDT Welcome Bonus to instantly fill 50% of your cashout goal!';
+    }
+  }
+
+  updateWelcomeBonusUI();
   updateRank();
   updateDailyUI();
 }
@@ -2768,6 +2787,114 @@ function closeAdPlayer(rewarded = false) {
   try { $('ad-player-dialog')?.close(); } catch {}
 }
 
+let isClaimingWelcomeBonus = false;
+
+function updateWelcomeBonusUI() {
+  const isClaimed = Boolean(player.claimedWelcomeBonus);
+
+  // Home card
+  const homeBtn = $('home-claim-welcome-btn');
+  const homeTag = $('home-bonus-claimed-tag');
+  const homeChip = $('home-bonus-status-chip');
+  if (homeBtn && homeTag) {
+    if (isClaimed) {
+      homeBtn.style.display = 'none';
+      homeTag.style.display = 'inline-flex';
+      if (homeChip) {
+        homeChip.textContent = 'CLAIMED ✅';
+        homeChip.className = 'soft-chip';
+      }
+    } else {
+      homeBtn.style.display = 'inline-flex';
+      homeBtn.disabled = isClaimingWelcomeBonus;
+      homeBtn.textContent = isClaimingWelcomeBonus ? '⏳ Loading Sponsor Ad...' : '🎁 Watch Ad & Claim $5.00 USDT';
+      homeTag.style.display = 'none';
+      if (homeChip) {
+        homeChip.textContent = 'FREE $5.00 USDT';
+        homeChip.className = 'soft-chip live';
+      }
+    }
+  }
+
+  // Pool card
+  const poolBtn = $('pool-claim-welcome-btn');
+  const poolTag = $('pool-bonus-claimed-tag');
+  const poolChip = $('pool-bonus-status-chip');
+  if (poolBtn && poolTag) {
+    if (isClaimed) {
+      poolBtn.style.display = 'none';
+      poolTag.style.display = 'inline-flex';
+      if (poolChip) {
+        poolChip.textContent = 'CLAIMED ✅';
+        poolChip.className = 'soft-chip';
+      }
+    } else {
+      poolBtn.style.display = 'inline-flex';
+      poolBtn.disabled = isClaimingWelcomeBonus;
+      poolBtn.textContent = isClaimingWelcomeBonus ? '⏳ Loading Sponsor Ad...' : '🎁 Watch Ad & Claim $5.00 USDT';
+      poolTag.style.display = 'none';
+      if (poolChip) {
+        poolChip.textContent = '50% OF FIRST CASHOUT';
+        poolChip.className = 'soft-chip live';
+      }
+    }
+  }
+}
+
+function triggerCelebrationModal(amount = 5.00) {
+  const dialog = $('welcome-bonus-dialog');
+  if (!dialog) return;
+
+  const container = $('celebration-confetti');
+  if (container) {
+    clear(container);
+    const colors = ['#ffd166', '#50e3c2', '#ff5c8a', '#8b5cf6', '#38ef7d', '#00f2fe', '#ffffff'];
+    for (let i = 0; i < 45; i++) {
+      const piece = el('div', 'confetti-piece');
+      piece.style.left = `${Math.random() * 95}%`;
+      piece.style.top = `${Math.random() * -40}px`;
+      piece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+      piece.style.width = `${Math.floor(Math.random() * 8 + 6)}px`;
+      piece.style.height = `${Math.floor(Math.random() * 12 + 8)}px`;
+      piece.style.animationDelay = `${(Math.random() * 1.2).toFixed(2)}s`;
+      piece.style.animationDuration = `${(Math.random() * 1.5 + 2.5).toFixed(2)}s`;
+      piece.style.transform = `rotate(${Math.floor(Math.random() * 360)}deg)`;
+      container.append(piece);
+    }
+  }
+
+  try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
+  try {
+    dialog.showModal();
+  } catch {
+    dialog.setAttribute('open', 'true');
+  }
+}
+
+async function claimWelcomeBonus() {
+  if (player.claimedWelcomeBonus) {
+    toast('You have already claimed your $5.00 USDT Welcome Bonus!');
+    return;
+  }
+  if (isClaimingWelcomeBonus) return;
+
+  isClaimingWelcomeBonus = true;
+  updateWelcomeBonusUI();
+  try {
+    await openAdPlayer();
+  } catch (err) {
+    console.warn('Welcome bonus ad flow error:', err);
+    toast('Could not load sponsor ad. Please try again.');
+  } finally {
+    setTimeout(() => {
+      if (!player.claimedWelcomeBonus) {
+        isClaimingWelcomeBonus = false;
+        updateWelcomeBonusUI();
+      }
+    }, 4000);
+  }
+}
+
 async function claimAdReward() {
   const claimBtn = $('ad-claim-btn');
   if (claimBtn) {
@@ -2776,10 +2903,15 @@ async function claimAdReward() {
   }
 
   const net = currentAdNetwork || 'monetag';
+  const claimingBonus = Boolean(isClaimingWelcomeBonus && !player.claimedWelcomeBonus);
 
   // 1. Immediately credit star in user account and UI
   player.stars = (Number(player.stars) || 0) + 1;
   player.weeklyStars = (Number(player.weeklyStars) || 0) + 1;
+  if (claimingBonus) {
+    player.claimedWelcomeBonus = true;
+    player.usdtBalance = (Number(player.usdtBalance) || 0) + 5.00;
+  }
   poolData.adsWatchedToday = (Number(poolData.adsWatchedToday) || 0) + 1;
   write('ms_demo_player_v2', player);
   renderProfileBase();
@@ -2787,28 +2919,51 @@ async function claimAdReward() {
   startCooldownTimer(60);
   closeAdPlayer(true);
   try { tg?.HapticFeedback?.notificationOccurred('success'); } catch {}
-  toast(`🎉 +1 ⭐ Star credited to your account! Total: ${player.stars} Stars`);
+
+  if (claimingBonus) {
+    triggerCelebrationModal(5.00);
+  } else {
+    toast(`🎉 +1 ⭐ Star credited to your account! Total: ${player.stars} Stars`);
+  }
 
   // 2. Sync to server database in background
   try {
-    const res = await api('/ads/claim', {
-      method: 'POST',
-      body: { network: net, userId: player.id, name: player.name }
-    });
-    if (res?.stars !== undefined) {
-      player.stars = res.stars;
-      player.weeklyStars = res.weeklyStars;
-      poolData.adsWatchedToday = res.adsToday;
-      if (Array.isArray(res.approvedNetworks)) {
-        syncApprovedNetworks(res.approvedNetworks);
+    if (claimingBonus) {
+      const res = await api('/bonus/claim-welcome', {
+        method: 'POST',
+        body: { network: net, userId: player.id, name: player.name }
+      });
+      if (res && res.ok) {
+        player.claimedWelcomeBonus = true;
+        if (res.usdtBalance !== undefined) player.usdtBalance = res.usdtBalance;
+        if (res.stars !== undefined) player.stars = res.stars;
+        if (res.weeklyStars !== undefined) player.weeklyStars = res.weeklyStars;
+        write('ms_demo_player_v2', player);
+        renderProfileBase();
+        refreshPoolData();
       }
-      write('ms_demo_player_v2', player);
-      renderProfileBase();
-      refreshPoolData();
+    } else {
+      const res = await api('/ads/claim', {
+        method: 'POST',
+        body: { network: net, userId: player.id, name: player.name }
+      });
+      if (res?.stars !== undefined) {
+        player.stars = res.stars;
+        player.weeklyStars = res.weeklyStars;
+        poolData.adsWatchedToday = res.adsToday;
+        if (Array.isArray(res.approvedNetworks)) {
+          syncApprovedNetworks(res.approvedNetworks);
+        }
+        write('ms_demo_player_v2', player);
+        renderProfileBase();
+        refreshPoolData();
+      }
     }
   } catch (err) {
     console.warn('Server sync note:', err);
   } finally {
+    isClaimingWelcomeBonus = false;
+    updateWelcomeBonusUI();
     if (claimBtn) {
       claimBtn.disabled = false;
       claimBtn.textContent = 'Claim Reward';
@@ -3305,6 +3460,12 @@ $('arena-watch-ad-btn')?.addEventListener('click', openAdPlayer);
 $('finish-watch-ad-btn')?.addEventListener('click', () => { $('finish-dialog')?.close(); openAdPlayer(); });
 $('ad-claim-btn')?.addEventListener('click', claimAdReward);
 $('ad-cancel-btn')?.addEventListener('click', () => closeAdPlayer(false));
+$('home-claim-welcome-btn')?.addEventListener('click', claimWelcomeBonus);
+$('pool-claim-welcome-btn')?.addEventListener('click', claimWelcomeBonus);
+$('bonus-continue-btn')?.addEventListener('click', () => {
+  try { $('welcome-bonus-dialog')?.close(); } catch {}
+  setView('pool');
+});
 $('wallet-withdraw-btn')?.addEventListener('click', submitWithdrawal);
 $('wallet-withdraw-form')?.addEventListener('submit', (e) => { e.preventDefault(); submitWithdrawal(); });
 $('refresh-withdrawals-btn')?.addEventListener('click', refreshUserWithdrawals);

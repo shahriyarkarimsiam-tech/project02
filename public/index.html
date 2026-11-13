@@ -72,6 +72,36 @@
         <section class="view active" data-view="home" aria-label="Arcade overview">
           <div class="welcome-row"><div><div class="overline"><span class="accent-dot"></span> YOUR PERSONAL ARCADE</div><h1>Play a little.<br/><span>Level up a lot.</span></h1><p>Welcome back, <strong id="welcome-name">Player</strong>. 5 signature games, verified leaderboards, and 50% weekly revenue share.</p></div><div class="date-pill"><span>✴</span><span id="today-label">DAILY EDITION</span></div></div>
 
+          <!-- WELCOME JOINING BONUS BANNER ($5.00 USDT) -->
+          <div class="welcome-bonus-card" id="home-welcome-bonus-card">
+            <div class="welcome-bonus-glow"></div>
+            <div class="welcome-bonus-content">
+              <div class="welcome-bonus-header">
+                <span class="welcome-bonus-pill">🎁 NEW PLAYER WELCOME BONUS</span>
+                <span class="soft-chip live" id="home-bonus-status-chip">FREE $5.00 USDT</span>
+              </div>
+              <div class="welcome-bonus-body">
+                <div class="welcome-bonus-text">
+                  <h3>Claim Your $5.00 USDT Joining Bonus!</h3>
+                  <p>Watch 1 sponsor ad to claim an instant <b>$5.00 USDT</b> credit directly into your balance! You'll already be 50% toward your $10.00 withdrawal goal.</p>
+                </div>
+                <div class="welcome-bonus-reward-box">
+                  <small>INSTANT JOINING REWARD</small>
+                  <strong>+$5.00 <span class="usdt-unit">USDT</span></strong>
+                  <span class="bonus-goal-hint">Min. cashout: $10.00</span>
+                </div>
+              </div>
+              <div class="welcome-bonus-actions">
+                <button type="button" class="btn btn-primary" id="home-claim-welcome-btn">
+                  🎁 Watch Ad & Claim $5.00 USDT
+                </button>
+                <span class="bonus-claimed-badge" id="home-bonus-claimed-tag" style="display: none;">
+                  ✅ $5.00 USDT Welcome Bonus Claimed
+                </span>
+              </div>
+            </div>
+          </div>
+
           <!-- POOL BANNER PROMO CARD -->
           <div class="pool-banner-card" data-view-target="pool" role="button" tabindex="0">
             <div class="pool-banner-glow"></div>
@@ -347,6 +377,36 @@
             <button class="btn btn-outline btn-sm" id="open-admin-settle-btn">⚙ Admin Settlement Console</button>
           </div>
 
+          <!-- WELCOME BONUS CARD IN POOL TAB -->
+          <div class="welcome-bonus-card pool-bonus-card" id="pool-welcome-bonus-card">
+            <div class="welcome-bonus-glow"></div>
+            <div class="welcome-bonus-content">
+              <div class="welcome-bonus-header">
+                <span class="welcome-bonus-pill">🎁 $5.00 USDT WELCOME REWARD</span>
+                <span class="soft-chip live" id="pool-bonus-status-chip">50% OF FIRST CASHOUT</span>
+              </div>
+              <div class="welcome-bonus-body">
+                <div class="welcome-bonus-text">
+                  <h3>Get a $5.00 USDT Head Start</h3>
+                  <p>Watch 1 sponsor ad to claim your free $5.00 USDT joining bonus. Then watch ads daily to earn Stars — around Friday, your Stars convert to USDT to hit $10.00 and cash out!</p>
+                </div>
+                <div class="welcome-bonus-reward-box">
+                  <small>INSTANT CREDIT</small>
+                  <strong>+$5.00 <span class="usdt-unit">USDT</span></strong>
+                  <span class="bonus-goal-hint">Min. cashout: $10.00</span>
+                </div>
+              </div>
+              <div class="welcome-bonus-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="pool-claim-welcome-btn">
+                  🎁 Watch Ad & Claim $5.00 USDT
+                </button>
+                <span class="bonus-claimed-badge" id="pool-bonus-claimed-tag" style="display: none;">
+                  ✅ $5.00 USDT Welcome Bonus Claimed
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div class="pool-stats-grid">
             <div class="pool-stat-card highlight">
               <span class="pool-stat-icon">💰</span>
@@ -567,6 +627,23 @@
               <p>Your verified ad revenue share earnings. Accumulates week after week — withdraw anytime!</p>
             </div>
 
+            <!-- CASHOUT GOAL PROGRESS TRACK ($10 MINIMUM) -->
+            <div class="cashout-goal-box">
+              <div class="cashout-goal-header">
+                <div>
+                  <small>WITHDRAWAL GOAL PROGRESS</small>
+                  <strong><span id="cashout-progress-current">$0.00</span> / $10.00 USDT</strong>
+                </div>
+                <span id="cashout-progress-pct" class="cashout-goal-pct">0%</span>
+              </div>
+              <div class="cashout-goal-track">
+                <div class="cashout-goal-fill" id="cashout-goal-bar" style="width: 0%"></div>
+              </div>
+              <p class="cashout-goal-tip" id="cashout-goal-tip">
+                🎁 Claim your $5.00 USDT Welcome Bonus to instantly fill 50% of your cashout goal!
+              </p>
+            </div>
+
             <div id="profile-ref-lock-notice" class="pool-status-msg" style="background:#2d1b10;color:#f8b26a;border:1px solid #6b3e18;margin-bottom:14px;">
               ⚠️ Your 1st withdrawal is locked until you have at least 10 users joined under your link (Current: 0/10). Once completed, you never need referrals again!
             </div>
@@ -731,6 +808,56 @@
     <button class="btn btn-primary wide" id="admin-execute-settle-btn" disabled>Confirm & Convert Stars Now</button>
     <div id="admin-settle-status" class="pool-status-msg" hidden></div>
   </dialog>
+
+  <!-- CELEBRATION CONGRATULATION SIMULATION DIALOG -->
+  <dialog id="welcome-bonus-dialog" class="game-dialog celebration-dialog">
+    <div class="celebration-confetti-container" id="celebration-confetti" aria-hidden="true"></div>
+    <div class="celebration-content">
+      <div class="celebration-badge-icon">🎉</div>
+      <span class="mini-label" style="color: #ffd166; font-weight: 700; letter-spacing: 1px;">CONGRATULATIONS!</span>
+      <h2 style="margin: 6px 0 8px; font-size: 24px;">$5.00 USDT Credited!</h2>
+      <p class="celebration-subtitle">
+        Your new player welcome bonus has been successfully credited directly into your profile balance!
+      </p>
+
+      <div class="celebration-amount-card">
+        <span class="celebration-plus">+</span>
+        <strong class="celebration-amount">$5.00</strong>
+        <span class="celebration-currency">USDT</span>
+      </div>
+
+      <div class="celebration-progress-card">
+        <div class="celebration-progress-header">
+          <span>PROGRESS TO 1ST CASHOUT ($10.00 MIN)</span>
+          <strong style="color: #50e3c2;">50% COMPLETE!</strong>
+        </div>
+        <div class="celebration-progress-track">
+          <div class="celebration-progress-fill" style="width: 50%;"></div>
+        </div>
+        <div class="celebration-steps-info">
+          <div class="step-item done">
+            <span class="step-check">✓</span>
+            <div>
+              <strong>$5.00 Welcome Bonus</strong>
+              <small>Already credited to your balance</small>
+            </div>
+          </div>
+          <div class="step-item pending">
+            <span class="step-check">⭐</span>
+            <div>
+              <strong>Earn $5.00 More in Stars</strong>
+              <small>Watch ads daily & convert Stars around Friday to cash out $10.00!</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-primary wide celebration-btn" id="bonus-continue-btn">
+        🚀 Start Earning Stars Now
+      </button>
+    </div>
+  </dialog>
+
   <!-- Adsterra Social Bar (Zone: 32219036) -->
   <script data-cfasync="false" src="https://bicea.org/14/728e800c4a932bd893e2f868ef8f218a"></script>
 </body>

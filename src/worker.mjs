@@ -518,6 +518,7 @@ async function userProfile(env, uid) {
       COALESCE(weekly_stars, 0) AS weeklyStars,
       COALESCE(usdt_balance, 0.0) AS usdtBalance,
       COALESCE(last_ad_at, 0) AS lastAdAt,
+      COALESCE(claimed_welcome_bonus, 0) AS claimedWelcomeBonus,
       payout_wallet AS payoutWallet,
       COALESCE(referrals_count, 0) AS referralsCount,
       COALESCE(has_withdrawn, 0) AS hasWithdrawn,
@@ -540,6 +541,7 @@ async function userProfile(env, uid) {
   return {
     player: {
       ...player,
+      claimedWelcomeBonus: Boolean(player.claimedWelcomeBonus),
       isAdmin: Boolean(isAdmin),
       streak: currentStreak((days.results||[]).map(d=>d.day)),
       ownedThemes: ['mint', ...(themed.results||[]).map(x=>x.id)],
@@ -1604,6 +1606,60 @@ async function route(request, env) {
         dailyCap: null,
         cooldownSeconds: 60,
         approvedNetworks
+      });
+    }
+
+    if (method === 'POST' && path === '/api/bonus/claim-welcome') {
+      if (!env.DB) return fail(503, 'Database unavailable');
+      const input = await bodyJSON(request).catch(() => ({}));
+      const rawNet = String(input.network || 'monetag').toLowerCase();
+      const adNetwork = SUPPORTED_AD_NETWORKS.includes(rawNet) ? rawNet : 'monetag';
+
+      // Auto-create or get player
+      let player = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, claimed_welcome_bonus, last_ad_at FROM players WHERE id=?').bind(uid).first();
+      if (!player) {
+        const pName = String(input.name || request.headers.get('x-user-name') || 'Player').slice(0, 40);
+        const pUsername = input.username || null;
+        const stamp = now();
+        await env.DB.prepare(`INSERT INTO players (id,display_name,username,created_at,last_seen_at) VALUES (?,?,?,?,?)
+          ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at`).bind(uid, pName, pUsername, stamp, stamp).run();
+        await env.DB.prepare('INSERT OR IGNORE INTO player_days(player_id,day) VALUES (?,?)').bind(uid, todayUTC()).run();
+        player = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, claimed_welcome_bonus, last_ad_at FROM players WHERE id=?').bind(uid).first();
+      }
+
+      if (Boolean(player?.claimed_welcome_bonus)) {
+        return fail(400, 'Welcome bonus has already been claimed on this account.');
+      }
+
+      const stamp = now();
+      const weekId = currentWeekId();
+      const impressionId = crypto.randomUUID();
+      const bonusAmount = 5.00;
+
+      await env.DB.batch([
+        env.DB.prepare(
+          'UPDATE players SET usdt_balance = COALESCE(usdt_balance, 0) + ?, claimed_welcome_bonus = 1, stars = COALESCE(stars, 0) + 1, weekly_stars = COALESCE(weekly_stars, 0) + 1, last_ad_at = ? WHERE id = ?'
+        ).bind(bonusAmount, stamp, uid),
+        env.DB.prepare(
+          'INSERT INTO ad_impressions (id, player_id, ad_network, week_id, completed_at, reward_stars) VALUES (?, ?, ?, ?, ?, 1)'
+        ).bind(impressionId, uid, adNetwork, weekId, stamp),
+        env.DB.prepare(`
+          INSERT INTO weekly_pools (week_id, total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status)
+          VALUES (?, 1, 0.0, 0.0, 0.0, 'active')
+          ON CONFLICT(week_id) DO UPDATE SET
+            total_stars = total_stars + 1
+        `).bind(weekId)
+      ]);
+
+      const updated = await env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, claimed_welcome_bonus FROM players WHERE id=?').bind(uid).first();
+      return json({
+        ok: true,
+        bonusAmount,
+        usdtBalance: updated?.usdt_balance || bonusAmount,
+        stars: updated?.stars || 1,
+        weeklyStars: updated?.weekly_stars || 1,
+        claimedWelcomeBonus: true,
+        message: 'Congratulations! $5.00 USDT Welcome Bonus added to your profile balance!'
       });
     }
 

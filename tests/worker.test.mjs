@@ -899,6 +899,62 @@ test('POST /api/ads/claim supports multi-network tracking', async () => {
   assert.equal(adexiumData.rewardStars, 1);
 });
 
+test('POST /api/bonus/claim-welcome credits $5.00 USDT and rejects duplicate claim', async () => {
+  const auth = await authHeader('2001');
+  let claimedState = 0;
+  let batchCalled = false;
+  const mockDB = {
+    prepare(query) {
+      return {
+        bind(...args) {
+          return {
+            async first() {
+              if (query.includes('SELECT stars, weekly_stars, usdt_balance, claimed_welcome_bonus')) {
+                return { stars: 0, weekly_stars: 0, usdt_balance: 0.0, claimed_welcome_bonus: claimedState, last_ad_at: 0 };
+              }
+              return null;
+            },
+            async run() {
+              return { success: true };
+            }
+          };
+        }
+      };
+    },
+    async batch(stmts) {
+      assert.equal(stmts.length, 3);
+      batchCalled = true;
+      claimedState = 1;
+      return [];
+    }
+  };
+
+  // 1. First claim succeeds and awards $5.00 USDT
+  const resp1 = await worker.fetch(new Request('https://example.com/api/bonus/claim-welcome', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'monetag' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(resp1.status, 200);
+  const data1 = await resp1.json();
+  assert.equal(data1.ok, true);
+  assert.equal(data1.bonusAmount, 5.00);
+  assert.equal(data1.claimedWelcomeBonus, true);
+  assert(batchCalled);
+
+  // 2. Duplicate claim is rejected with 400
+  const resp2 = await worker.fetch(new Request('https://example.com/api/bonus/claim-welcome', {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ network: 'monetag' })
+  }), { DB: mockDB, SESSION_SECRET });
+
+  assert.equal(resp2.status, 400);
+  const data2 = await resp2.json();
+  assert(data2.error.includes('already been claimed'));
+});
+
 test('POST /api/ads/claim rejects with 400 when no real ads configured', async () => {
   const auth = await authHeader('1001');
   const mockDB = { prepare() { return { bind() { return { async first() { return { id: '1001' }; } }; } }; } };
