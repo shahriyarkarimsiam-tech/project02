@@ -2704,7 +2704,7 @@ function startCooldownTimer(seconds = 60) {
 }
 
 async function openAdPlayer() {
-  if (currentCooldown > 0) {
+  if (!isClaimingWelcomeBonus && currentCooldown > 0) {
     toast(`Ad cooldown active. Please wait ${currentCooldown} seconds.`);
     return;
   }
@@ -2781,10 +2781,18 @@ async function openAdPlayer() {
   }
 
   toast('No ad fill available right now from sponsored ad networks. Please try again in a few moments.');
+  if (isClaimingWelcomeBonus) {
+    isClaimingWelcomeBonus = false;
+    updateWelcomeBonusUI();
+  }
 }
 
 function closeAdPlayer(rewarded = false) {
   try { $('ad-player-dialog')?.close(); } catch {}
+  if (!rewarded && isClaimingWelcomeBonus) {
+    isClaimingWelcomeBonus = false;
+    updateWelcomeBonusUI();
+  }
 }
 
 let isClaimingWelcomeBonus = false;
