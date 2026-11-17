@@ -1225,28 +1225,66 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
+    // 15. /broadcast <message>
+    if (text.startsWith('/broadcast')) {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
+        });
+        return json({ ok: true });
+      }
+      const broadcastMsg = text.replace(/^\/broadcast\s*/i, '').trim();
+      if (!broadcastMsg) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `📢 <b>Admin Broadcast Tool</b>\n\nUsage: <code>/broadcast &lt;your message&gt;</code>\n\nExample:\n<code>/broadcast 💰 Watch ads and Earn Money!</code>`
+        });
+        return json({ ok: true });
+      }
+      const allPlayers = await getAllSafe(env.DB, 'SELECT id FROM players WHERE id NOT LIKE "tg_%"');
+      let count = 0;
+      for (const p of (allPlayers?.results || [])) {
+        try {
+          const r = await sendTelegramMessage(env.BOT_TOKEN, {
+            chatId: p.id,
+            text: broadcastMsg,
+            replyMarkup: {
+              inline_keyboard: [
+                [{ text: '▶️ Watch Ads & Earn Money', web_app: { url: `${appUrl}?view=pool` } }]
+              ]
+            }
+          });
+          if (r?.ok) count++;
+        } catch {}
+        await new Promise(r => setTimeout(r, 120));
+      }
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `📢 <b>Broadcast Complete!</b>\n\nSuccessfully delivered message to <b>${count}</b> active users.`
+      });
+      return json({ ok: true });
+    }
+
     await sendTelegramMessage(env.BOT_TOKEN, {
       chatId,
-      text: `👋 Hello <b>${safeFirstName}</b>!\n\n🎮 Welcome to <b>Merge Streak Arcade</b>!\n\nChoose a game to play and climb the leaderboards:\n• 🔢 <b>Merge Streak</b> (4×4 2048 puzzle)\n• 🧱 <b>Block Collapse</b> (8×8 line clearing puzzle)\n• 🔮 <b>Color Cascade</b> (7×7 match-3 gem puzzle)\n• 🧠 <b>Memory Matrix</b> (3×3 pattern sequence memory)\n• 🐍 <b>Neon Viper</b> (16×16 classic reflex snake)\n\n⭐ <b>Weekly Ad Revenue Share:</b>\nWatch short ads to earn Stars. 50% of all ad revenue is distributed weekly in USDT!\n\n💼 <b>Earn More With TaskKit (@taskkitio_bot):</b>\nComplete microtasks &amp; bounties with our sister bot to earn direct money.\n\n👇 Tap below to start playing or earn more:`,
+      text: `👋 Hello <b>${safeFirstName}</b>!\n\n💰 <b>WATCH ADS AND EARN MONEY!</b>\n\n🎁 <b>Claim Your $5.00 USDT Welcome Bonus!</b>\n⭐ <b>1 Completed Ad = 1 Star</b> (Unlimited daily ads!)\n📈 Stars convert into withdrawable USDT every Friday!\n💳 Minimum Cashout: <b>$10.00 USDT</b> (BEP-20)\n\n🎮 <b>5 Signature Arcade Games:</b>\n• 🔢 <b>Merge Streak</b> (4×4 2048 puzzle)\n• 🧱 <b>Block Collapse</b> (8×8 line clearer)\n• 🔮 <b>Color Cascade</b> (7×7 gem match-3)\n• 🧠 <b>Memory Matrix</b> (3×3 pattern memory)\n• 🐍 <b>Neon Viper</b> (16×16 reflex snake)\n\n👇 <b>Tap below to start earning now:</b>`,
       replyMarkup: {
         inline_keyboard: [
           [
-            { text: '🔢 Play Merge Streak', web_app: { url: `${appUrl}?game=merge` } }
+            { text: '💰 Watch Ads & Earn Money (+$5.00 Bonus)', web_app: { url: `${appUrl}?view=pool` } }
           ],
           [
+            { text: '🔢 Play Merge Streak', web_app: { url: `${appUrl}?game=merge` } },
             { text: '🧱 Play Block Collapse', web_app: { url: `${appUrl}?game=blocks` } }
           ],
           [
-            { text: '🔮 Play Color Cascade', web_app: { url: `${appUrl}?game=cascade` } }
-          ],
-          [
+            { text: '🔮 Play Color Cascade', web_app: { url: `${appUrl}?game=cascade` } },
             { text: '🧠 Play Memory Matrix', web_app: { url: `${appUrl}?game=memory` } }
           ],
           [
             { text: '🐍 Play Neon Viper', web_app: { url: `${appUrl}?game=viper` } }
-          ],
-          [
-            { text: '⭐ Weekly Revenue Pool', web_app: { url: `${appUrl}?view=pool` } }
           ],
           [
             { text: '💼 Earn on TaskKit (@taskkitio_bot) ↗', url: 'https://t.me/taskkitio_bot' }
