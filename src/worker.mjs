@@ -1267,6 +1267,28 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
+    // 16. /test_reminder or /send_reminder
+    if (text === '/test_reminder' || text === '/send_reminder') {
+      const isAdmin = await isAuthorizedAdmin(chatId, env);
+      if (!isAdmin) {
+        await sendTelegramMessage(env.BOT_TOKEN, {
+          chatId,
+          text: `⛔ <b>Unauthorized.</b> Send <code>/claim_admin</code> if you are the project owner.`
+        });
+        return json({ ok: true });
+      }
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `⏳ <i>Sending daily 10 PM reminder broadcast now...</i>`
+      });
+      const result = await handleDailyAdReminder(env);
+      await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId,
+        text: `📢 <b>Daily Reminder Broadcast Sent!</b>\n\nDelivered to <b>${result?.sent || 0}</b> active users.`
+      });
+      return json({ ok: true });
+    }
+
     await sendTelegramMessage(env.BOT_TOKEN, {
       chatId,
       text: `👋 Hello <b>${safeFirstName}</b>!\n\n💰 <b>WATCH ADS AND EARN MONEY!</b>\n\n🎁 <b>Claim Your $5.00 USDT Welcome Bonus!</b>\n⭐ <b>1 Completed Ad = 1 Star</b> (Unlimited daily ads!)\n📈 Stars convert into withdrawable USDT every Friday!\n💳 Minimum Cashout: <b>$10.00 USDT</b> (BEP-20)\n\n🎮 <b>5 Signature Arcade Games:</b>\n• 🔢 <b>Merge Streak</b> (4×4 2048 puzzle)\n• 🧱 <b>Block Collapse</b> (8×8 line clearer)\n• 🔮 <b>Color Cascade</b> (7×7 gem match-3)\n• 🧠 <b>Memory Matrix</b> (3×3 pattern memory)\n• 🐍 <b>Neon Viper</b> (16×16 reflex snake)\n\n👇 <b>Tap below to start earning now:</b>`,
@@ -2131,7 +2153,33 @@ async function route(request, env) {
   return env.ASSETS.fetch(request);
 }
 
-export async function handleScheduled(event, env) {
+export async function handleDailyAdReminder(env) {
+  if (!env.DB || !env.BOT_TOKEN) return { ok: false, sent: 0 };
+  const appUrl = 'https://merge-streak-telegram-game.shahriyarkarimsiam.workers.dev';
+  const text = `💰 <b>Watch Ads and Earn Money!</b>\n\n🎁 <b>Claim Your $5.00 USDT Welcome Bonus!</b>\n⭐ 1 Ad = 1 Star\n📈 Stars convert into withdrawable USDT every Friday!\n💳 Minimum Cashout: $10.00 USDT (BEP-20)\n\n👇 Tap below to start earning now:`;
+
+  const allPlayers = await getAllSafe(env.DB, 'SELECT id FROM players WHERE id NOT LIKE "tg_%"');
+  let sent = 0;
+  for (const p of (allPlayers?.results || [])) {
+    try {
+      const res = await sendTelegramMessage(env.BOT_TOKEN, {
+        chatId: p.id,
+        text,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: '▶️ Watch Ads & Earn Money', web_app: { url: `${appUrl}?view=pool` } }]
+          ]
+        }
+      });
+      if (res?.ok) sent++;
+    } catch {}
+    await new Promise(r => setTimeout(r, 120));
+  }
+  console.log(`[Daily 10 PM Reminder] Delivered to ${sent} users.`);
+  return { ok: true, sent };
+}
+
+export async function handleFridayReminder(env) {
   if (!env.DB) return;
   const weekId = currentWeekId();
   try {
@@ -2159,6 +2207,18 @@ export async function handleScheduled(event, env) {
     console.log(`[Friday Reminder Sent] Week ${weekId}: ${totalStars} stars awaiting manual admin confirmation.`);
   } catch (err) {
     console.error('[Friday Scheduled Reminder Error]:', err);
+  }
+}
+
+export async function handleScheduled(event, env) {
+  const cron = event?.cron;
+  if (cron === '0 16 * * *') {
+    await handleDailyAdReminder(env);
+  } else if (cron === '59 23 * * 5') {
+    await handleFridayReminder(env);
+  } else {
+    // Default fallback (e.g. tests or direct call)
+    await handleFridayReminder(env);
   }
 }
 

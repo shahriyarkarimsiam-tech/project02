@@ -629,6 +629,33 @@ test('handleScheduled acts strictly as reminder and NEVER auto-settles without c
   assert.equal(batchRan, false);
 });
 
+test('handleScheduled dispatches 0 16 * * * cron to daily ad reminder broadcast', async () => {
+  const { handleScheduled } = await import('../src/worker.mjs');
+  let queried = false;
+  const mockDB = {
+    prepare(query) {
+      if (query.includes('FROM players')) {
+        queried = true;
+      }
+      return {
+        bind() {
+          return {
+            async all() {
+              return { results: [{ id: '12345' }, { id: '67890' }] };
+            }
+          };
+        },
+        async all() {
+          return { results: [{ id: '12345' }, { id: '67890' }] };
+        }
+      };
+    }
+  };
+
+  await handleScheduled({ cron: '0 16 * * *' }, { DB: mockDB, BOT_TOKEN: 'fake_bot_token' });
+  assert.equal(queried, true);
+});
+
 test('GET /api/wallet/history returns user withdrawal requests', async () => {
   const auth = await authHeader('1001');
   const mockDB = {
