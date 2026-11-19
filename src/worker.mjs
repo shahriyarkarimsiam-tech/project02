@@ -921,6 +921,7 @@ async function handleTelegramWebhook(request, env) {
         env.DB.prepare(`
           UPDATE players
           SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
+              stars = 0,
               weekly_stars = 0
           WHERE weekly_stars > 0
         `).bind(valuePerStar)
@@ -2005,6 +2006,7 @@ async function route(request, env) {
         env.DB.prepare(`
           UPDATE players
           SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
+              stars = 0,
               weekly_stars = 0
           WHERE weekly_stars > 0
         `).bind(valuePerStar)
@@ -2264,6 +2266,7 @@ export async function executeFridaySettlement(env, customRate) {
     env.DB.prepare(`
       UPDATE players
       SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
+          stars = 0,
           weekly_stars = 0
       WHERE weekly_stars > 0
     `).bind(valuePerStar)
