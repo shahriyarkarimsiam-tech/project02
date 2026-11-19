@@ -2138,12 +2138,18 @@ let adexiumWidget = null;
 
 function initAdexiumSDK() {
   const wid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
+  if (window.adexiumWidget) {
+    adexiumWidget = window.adexiumWidget;
+    return;
+  }
   if (window.AdexiumWidget && !adexiumWidget) {
     try {
       adexiumWidget = new window.AdexiumWidget({
         wid,
         adFormat: 'interstitial'
       });
+      window.adexiumWidget = adexiumWidget;
+      adexiumWidget.autoMode();
       console.log('[Adexium] Widget initialized (WID: ' + wid + ')');
     } catch (e) {
       console.warn('[Adexium] init note:', e);
@@ -2155,14 +2161,15 @@ async function playAdexiumAd() {
   const wid = window.ADEXIUM_WID || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
   toast('Loading sponsor ad from Adexium...');
   return new Promise(async (resolve, reject) => {
-    if (!window.AdexiumWidget) {
+    if (!window.AdexiumWidget && !window.adexiumWidget) {
       return reject(new Error('Adexium SDK not available'));
     }
     try {
       if (!adexiumWidget) {
         initAdexiumSDK();
       }
-      if (!adexiumWidget) {
+      const widget = window.adexiumWidget || adexiumWidget;
+      if (!widget) {
         return reject(new Error('Adexium instance not ready'));
       }
       let resolved = false;
@@ -2173,7 +2180,7 @@ async function playAdexiumAd() {
         }
       }, 10000);
 
-      const ads = await adexiumWidget.requestRewardedAd('interstitial').catch(() => null);
+      const ads = await widget.requestRewardedAd('interstitial').catch(() => null);
       if (Array.isArray(ads) && ads.length > 0) {
         const onAdClose = async () => {
           if (!resolved) {
@@ -2185,20 +2192,20 @@ async function playAdexiumAd() {
           }
         };
 
-        if (typeof adexiumWidget.once === 'function') {
-          adexiumWidget.once('adClosed', onAdClose);
-        } else if (typeof adexiumWidget.on === 'function') {
+        if (typeof widget.once === 'function') {
+          widget.once('adClosed', onAdClose);
+        } else if (typeof widget.on === 'function') {
           const handler = () => {
-            adexiumWidget.off?.('adClosed', handler);
+            widget.off?.('adClosed', handler);
             onAdClose();
           };
-          adexiumWidget.on('adClosed', handler);
+          widget.on('adClosed', handler);
         } else {
           clearTimeout(timer);
           return reject(new Error('Adexium completion listener unavailable'));
         }
 
-        adexiumWidget.displayAd(ads, 'interstitial');
+        widget.displayAd(ads, 'interstitial');
       } else {
         clearTimeout(timer);
         resolved = true;
