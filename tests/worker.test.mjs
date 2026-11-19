@@ -596,7 +596,7 @@ test('GET /api/admin/pool-summary returns live metrics to authorized admin', asy
   assert.equal(data.currentRatio, 0.01);
 });
 
-test('handleScheduled acts strictly as reminder and NEVER auto-settles without confirmation', async () => {
+test('handleScheduled automatically settles weekly stars on Friday cron 59 23 * * 5', async () => {
   const { handleScheduled } = await import('../src/worker.mjs');
   let batchRan = false;
   const mockDB = {
@@ -608,25 +608,36 @@ test('handleScheduled acts strictly as reminder and NEVER auto-settles without c
               if (query.includes('FROM weekly_pools')) {
                 return { total_stars: 2000, total_revenue_usdt: 40.0, community_pool_usdt: 20.0, status: 'active' };
               }
+              if (query.includes('FROM players WHERE weekly_stars > 0')) {
+                return { count: 5, totalActiveStars: 100 };
+              }
               if (query.includes('FROM system_settings')) {
-                return { value: '9999' };
+                return { value: '0.00333333' };
               }
               return null;
             }
           };
+        },
+        async first() {
+          if (query.includes('FROM players WHERE weekly_stars > 0')) {
+            return { count: 5, totalActiveStars: 100 };
+          }
+          if (query.includes('FROM system_settings')) {
+            return { value: '0.00333333' };
+          }
+          return null;
         }
       };
     },
     async batch() {
-      // Must NEVER be called!
       batchRan = true;
       return [];
     }
   };
 
-  await handleScheduled({}, { DB: mockDB, ADMIN_TELEGRAM_ID: '9999' });
-  // Verify that batch settlement did NOT run:
-  assert.equal(batchRan, false);
+  await handleScheduled({ cron: '59 23 * * 5' }, { DB: mockDB, ADMIN_TELEGRAM_ID: '9999' });
+  // Verify that batch settlement DID run:
+  assert.equal(batchRan, true);
 });
 
 test('handleScheduled dispatches 0 16 * * * cron to daily ad reminder broadcast', async () => {

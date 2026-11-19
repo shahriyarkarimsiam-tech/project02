@@ -2206,23 +2206,81 @@ export async function handleDailyAdReminder(env) {
   return { ok: true, sent };
 }
 
-export async function handleFridayReminder(env) {
-  if (!env.DB) return;
+export async function executeFridaySettlement(env, customRate) {
+  if (!env.DB) return { ok: false, error: 'No database' };
   const weekId = currentWeekId();
-  try {
-    const poolRow = await env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, status FROM weekly_pools WHERE week_id=?').bind(weekId).first();
-    if (!poolRow || poolRow.status === 'settled') return;
-    const totalStars = poolRow.total_stars || 0;
-    const communityPool = Number(poolRow.community_pool_usdt || 0.0);
-    
-    let confRate = 0.00333333; // Default 3 stars = 1 cent
+  
+  let confRate = customRate !== undefined && !isNaN(Number(customRate)) ? Number(customRate) : 0.00333333;
+  if (customRate === undefined) {
     try {
       const confSetting = await env.DB.prepare('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"').first();
       if (confSetting?.value && !isNaN(Number(confSetting.value))) confRate = Number(confSetting.value);
     } catch {}
-    const confPayout = (totalStars * confRate).toFixed(4);
+  }
 
-    // REMINDER ONLY: Star-to-USDT conversion requires explicit admin confirmation
+  let eligibleRow = { count: 0, totalActiveStars: 0 };
+  try {
+    const stmt = env.DB.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(weekly_stars), 0) AS totalActiveStars FROM players WHERE weekly_stars > 0');
+    eligibleRow = (typeof stmt.bind === 'function' ? await stmt.bind().first?.() : await stmt.first?.()) || { count: 0, totalActiveStars: 0 };
+  } catch {}
+
+  const totalStars = Number(eligibleRow?.totalActiveStars || 0);
+  const eligibleCount = Number(eligibleRow?.count || 0);
+
+  if (totalStars <= 0 || eligibleCount <= 0) {
+    return { ok: true, totalStars: 0, eligibleCount: 0, communityPool: 0, valuePerStar: confRate, weekId };
+  }
+
+  const valuePerStar = confRate;
+  const communityPool = Number((totalStars * valuePerStar).toFixed(6));
+  const totalRevenue = Number((communityPool * 2).toFixed(6));
+  const stamp = now();
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO settlement_payouts (id, week_id, player_id, stars_converted, rate_per_star, usdt_credited, settled_at)
+      SELECT
+        (? || '_' || id || '_' || ?) AS id,
+        ? AS week_id,
+        id AS player_id,
+        weekly_stars AS stars_converted,
+        ? AS rate_per_star,
+        ROUND(weekly_stars * ?, 6) AS usdt_credited,
+        ? AS settled_at
+      FROM players
+      WHERE weekly_stars > 0
+    `).bind(weekId, String(stamp), weekId, valuePerStar, valuePerStar, stamp),
+    env.DB.prepare(`
+      INSERT INTO weekly_pools (week_id, total_revenue_usdt, community_pool_usdt, total_stars, value_per_star, status, settled_at)
+      VALUES (?, ?, ?, ?, ?, 'settled', ?)
+      ON CONFLICT(week_id) DO UPDATE SET
+        total_revenue_usdt = excluded.total_revenue_usdt,
+        community_pool_usdt = excluded.community_pool_usdt,
+        total_stars = excluded.total_stars,
+        value_per_star = excluded.value_per_star,
+        status = 'settled',
+        settled_at = excluded.settled_at
+    `).bind(weekId, totalRevenue, communityPool, totalStars, valuePerStar, stamp),
+    env.DB.prepare(`
+      UPDATE players
+      SET usdt_balance = ROUND(COALESCE(usdt_balance, 0.0) + (COALESCE(weekly_stars, 0) * ?), 6),
+          weekly_stars = 0
+      WHERE weekly_stars > 0
+    `).bind(valuePerStar)
+  ]);
+
+  return { ok: true, totalStars, eligibleCount, communityPool, totalRevenue, valuePerStar, weekId };
+}
+
+export async function handleFridaySettlement(env) {
+  if (!env.DB) return;
+  try {
+    const res = await executeFridaySettlement(env);
+    if (!res?.ok || res.totalStars <= 0) {
+      console.log(`[Friday Auto-Settlement] No active stars to convert.`);
+      return;
+    }
+
     let adminId = env.ADMIN_TELEGRAM_ID;
     if (!adminId) {
       try {
@@ -2234,12 +2292,12 @@ export async function handleFridayReminder(env) {
     if (adminId && env.BOT_TOKEN) {
       await sendTelegramMessage(env.BOT_TOKEN, {
         chatId: adminId,
-        text: `⏰ <b>Friday Weekly Star Settlement Reminder</b>\n\n• <b>Round:</b> <code>${escapeHtml(weekId)}</code>\n• <b>Total Community Stars:</b> <code>${totalStars} ⭐</code>\n• <b>Configured Rate:</b> <b>3 ⭐ = 1¢ ($0.01 USDT)</b> (<code>$${confRate.toFixed(6)} / ⭐</code>)\n• <b>Total Community Payout:</b> <code>$${confPayout} USDT</code>\n\n💬 <b>To convert stars into withdrawable USDT:</b>\n• Send <code>/settle_friday</code> (executes at 3 ⭐ = 1¢)\n• Or send <code>/rate &lt;custom_rate&gt;</code> (e.g. /rate 0.005)\n• Or open the Mini App Admin Settlement Console.`
-      }).catch(err => console.error('[Reminder Alert send failed]:', err));
+        text: `🎉 <b>Friday Automatic Settlement Complete!</b>\n\n• <b>Round:</b> <code>${escapeHtml(res.weekId)}</code>\n• <b>Rate per Star:</b> 3 ⭐ = 1¢ ($${res.valuePerStar.toFixed(6)} USDT)\n• <b>Total Stars Vanished:</b> ${res.totalStars} ⭐\n• <b>Total Community USDT Credited:</b> $${res.communityPool.toFixed(2)} USDT\n• <b>Eligible Players Credited:</b> ${res.eligibleCount}\n\n✅ <b>All active stars have been converted into USDT and vanished from weekly pools!</b>`
+      }).catch(err => console.error('[Settlement Alert send failed]:', err));
     }
-    console.log(`[Friday Reminder Sent] Week ${weekId}: ${totalStars} stars awaiting manual admin confirmation.`);
+    console.log(`[Friday Auto-Settlement] Settled ${res.totalStars} stars for ${res.eligibleCount} players.`);
   } catch (err) {
-    console.error('[Friday Scheduled Reminder Error]:', err);
+    console.error('[Friday Scheduled Settlement Error]:', err);
   }
 }
 
@@ -2248,10 +2306,10 @@ export async function handleScheduled(event, env) {
   if (cron === '0 16 * * *') {
     await handleDailyAdReminder(env);
   } else if (cron === '59 23 * * 5') {
-    await handleFridayReminder(env);
+    await handleFridaySettlement(env);
   } else {
     // Default fallback (e.g. tests or direct call)
-    await handleFridayReminder(env);
+    await handleFridaySettlement(env);
   }
 }
 
