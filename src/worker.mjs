@@ -166,7 +166,7 @@ const SUPPORTED_AD_NETWORKS = [
   'taskkit'
 ];
 
-export const DEFAULT_APPROVED_NETWORKS = ['monetag', 'adsterra', 'adexium', 'gigapub', 'adsgram'];
+export const DEFAULT_APPROVED_NETWORKS = ['richads', 'adsterra', 'monetag', 'adexium', 'gigapub', 'adsgram'];
 
 async function getAllSafe(db, query, ...args) {
   if (!db) return { results: [] };
@@ -1108,21 +1108,22 @@ async function handleTelegramWebhook(request, env) {
       const impMap = {};
       (imps?.results || []).forEach(r => { impMap[r.net] = r.count; });
 
-      let msg = `📡 <b>Ad Networks Ranking & Rotation Status:</b>\n\n`;
-      msg += `👑 <b>Tier 1: Active Rotation Loop (Sequential Round-Robin):</b>\n`;
-      msg += `1. <b>Monetag</b> — 🟢 LIVE (${impMap.monetag || 0} ads verified)\n`;
-      msg += `2. <b>Adsterra</b> — 🟢 LIVE (${impMap.adsterra || 0} ads verified)\n`;
-      msg += `3. <b>Adexium</b> — 🟢 LIVE (${impMap.adexium || 0} ads verified)\n\n`;
+      let msg = `📡 <b>Ad Networks Ranking & Waterfall Status:</b>\n\n`;
+      msg += `👑 <b>Top Priority (Waterfall #1 & #2):</b>\n`;
+      msg += `1. <b>RichAds</b> — 🟢 LIVE (#1 Priority · ${impMap.richads || 0} ads verified)\n`;
+      msg += `2. <b>Adsterra</b> — 🟢 LIVE (#2 Priority · ${impMap.adsterra || 0} ads verified)\n\n`;
 
-      msg += `⏳ <b>Tier 2: Pending Networks (Auto-Promote on Approval):</b>\n`;
-      msg += `4. <b>AdsGram:</b> 🟡 Pending Review (Block: 59239)\n`;
-      msg += `5. <b>OnClickA:</b> 🟡 In Moderation (Spot: 6155185)\n`;
-      msg += `6. <b>Adsun:</b> 🟡 Pending Activation (Block: 50194)\n`;
-      msg += `7. <b>GigaPub:</b> 🟡 In Review (App: 9103)\n`;
-      msg += `8. <b>TADS:</b> 🟡 Pending Review (Widget: 13243)\n`;
-      msg += `9. <b>RichAds:</b> 🟡 Warming Up (DSP Pre-roll)\n\n`;
+      msg += `🚀 <b>Secondary Network Waterfall / Rotation:</b>\n`;
+      msg += `3. <b>Monetag</b> — 🟢 LIVE (${impMap.monetag || 0} ads verified)\n`;
+      msg += `4. <b>Adexium</b> — 🟢 LIVE (${impMap.adexium || 0} ads verified)\n`;
+      msg += `5. <b>GigaPub</b> — 🟢 LIVE (${impMap.gigapub || 0} ads verified)\n`;
+      msg += `6. <b>AdsGram</b> — 🟢 LIVE (${impMap.adsgram || 0} ads verified)\n\n`;
 
-      msg += `💡 <b>Automatic Promotion Engine:</b>\nAs soon as any Tier 2 network is approved and delivers an ad, the system automatically promotes it into the active rotation loop (4, 5, 6...) with zero code changes!\n\n`;
+      msg += `⏳ <b>Pending Networks (Auto-Promote on Fill):</b>\n`;
+      msg += `7. <b>OnClickA:</b> 🟡 In Moderation (Spot: 6155185)\n`;
+      msg += `8. <b>Adsun:</b> 🟡 Pending Activation (Block: 50194)\n\n`;
+
+      msg += `💡 <b>Waterfall Engine:</b>\nEvery ad view attempts #1 RichAds first, cascades to #2 Adsterra if unfilled, and cascades to secondary networks (Monetag, Adexium, GigaPub, Adsgram) to guarantee 100% ad fill rate!\n\n`;
       msg += `👉 <b>Manual Controls:</b>\n• <code>/set_ad &lt;network&gt; &lt;id&gt;</code> to update keys\n• <code>/remove_ad &lt;network&gt;</code> to deactivate`;
 
       await sendTelegramMessage(env.BOT_TOKEN, { chatId, text: msg });
@@ -1226,8 +1227,8 @@ async function handleTelegramWebhook(request, env) {
         if (r.ad_network) countMap[r.ad_network.toLowerCase()] = r.count;
       }
       const allNets = [
-        'monetag', 'adsterra', 'adexium', 'adsgram',
-        'onclicka', 'adsun', 'gigapub', 'tads', 'richads'
+        'richads', 'adsterra', 'monetag', 'adexium', 'gigapub', 'adsgram',
+        'onclicka', 'adsun'
       ];
       let msg = `📊 <b>Official Ad Networks Status &amp; Ranking</b>\n\n`;
       msg += `<b>🟢 Approved &amp; Active Loop (${approvedList.length}):</b>\n`;

@@ -1724,26 +1724,26 @@ async function authenticate() {
 // ============================================================================
 
 const SPONSORS = [
-  { network: 'adsgram', icon: '📢', title: 'AdsGram Network', tag: 'ADSGRAM REWARDED', desc: 'Leading Telegram Mini App video monetization network with verified Web3 advertisers.' },
+  { network: 'richads', icon: '💎', title: 'RichAds Global', tag: 'RICHADS #1 PRIORITY', desc: 'Scale user acquisition with top-tier verified push, pop and interstitial ad campaigns worldwide.' },
+  { network: 'adsterra', icon: '⭐', title: 'Adsterra Network', tag: 'ADSTERRA #2 PRIORITY', desc: 'World-renowned ad network delivering high-converting video and direct link sponsorships.' },
   { network: 'monetag', icon: '💰', title: 'Monetag Smart Direct', tag: 'MONETAG MONETIZATION', desc: 'AI-driven global ad formats delivering premium eCPM rates for mobile and Web3 applications.' },
-  { network: 'onclicka', icon: '⚡', title: 'OnClickA Traffic', tag: 'ONCLICKA PERFORMANCE', desc: 'High-conversion advertising platform powering fast-growing Telegram gaming bots and apps.' },
-  { network: 'richads', icon: '💎', title: 'RichAds Global', tag: 'RICHADS PREMIUM', desc: 'Scale user acquisition with top-tier verified push, pop and interstitial ad campaigns worldwide.' },
-  { network: 'telega', icon: '✈️', title: 'Telega.io Ads', tag: 'TELEGA.IO SPONSOR', desc: 'Premier marketplace for Telegram channels and bot advertisements with verified audience reach.' },
   { network: 'adexium', icon: '🌐', title: 'Adexium Exchange', tag: 'ADEXIUM DECENTRALIZED', desc: 'Decentralized digital ad platform connecting web3 publishers with transparent brand sponsors.' },
   { network: 'gigapub', icon: '🚀', title: 'GigaPub Media', tag: 'GIGAPUB PARTNER', desc: 'Performance monetization technology maximizing ad yields for high-engagement arcade games.' },
+  { network: 'adsgram', icon: '📢', title: 'AdsGram Network', tag: 'ADSGRAM REWARDED', desc: 'Leading Telegram Mini App video monetization network with verified Web3 advertisers.' },
+  { network: 'onclicka', icon: '⚡', title: 'OnClickA Traffic', tag: 'ONCLICKA PERFORMANCE', desc: 'High-conversion advertising platform powering fast-growing Telegram gaming bots and apps.' },
   { network: 'adsun', icon: '☀️', title: 'Adsun Platform', tag: 'ADSUN ADVERTISING', desc: 'Targeted in-app sponsored campaigns with instant conversion tracking and user rewards.' },
+  { network: 'telega', icon: '✈️', title: 'Telega.io Ads', tag: 'TELEGA.IO SPONSOR', desc: 'Premier marketplace for Telegram channels and bot advertisements with verified audience reach.' },
   { network: 'litebits', icon: '💠', title: 'LiteBits Ads', tag: 'LITEBITS NETWORK', desc: 'Fast, lightweight rewarded ad inventory optimized for instant-play casual mobile games.' },
   { network: 'adskinz', icon: '🎮', title: 'AdsKinz Gaming', tag: 'ADSKINZ GAMIFIED', desc: 'Gamified immersive brand showcases turning video views into immediate community stars.' },
   { network: 'openad', icon: '🔓', title: 'OpenAD Protocol', tag: 'OPENAD PROTOCOL', desc: 'Community-governed open advertising standard ensuring fair 50/50 revenue distribution.' },
-  { network: 'adsterra', icon: '⭐', title: 'Adsterra Network', tag: 'ADSTERRA VERIFIED', desc: 'World-renowned ad network delivering high-converting video and direct link sponsorships.' },
   { network: 'taskkit', icon: '💼', title: 'TaskKit IO (@taskkitio_bot)', tag: 'OFFICIAL SISTER PROJECT', desc: 'Complete quick microtasks, follow sponsors, test apps, and earn direct money alongside your Merge Streak rewards.', url: 'https://t.me/taskkitio_bot' }
 ];
 
-let currentAdNetwork = 'adsgram';
+let currentAdNetwork = 'richads';
 let adsgramController = null;
 
 function initAdsGramSDK() {
-  const blockId = String(window.ADSGRAM_BLOCK_ID || '59239');
+  const blockId = String(window.ADSGRAM_BLOCK_ID || '60738');
   if (window.Adsgram && (!adsgramController || adsgramController._blockId !== blockId)) {
     try {
       adsgramController = window.Adsgram.init({ blockId });
@@ -1755,22 +1755,34 @@ function initAdsGramSDK() {
 }
 
 async function playAdsGramAd() {
-  const blockId = String(window.ADSGRAM_BLOCK_ID || '59239');
   if (!window.Adsgram) {
     throw new Error('AdsGram SDK not loaded');
   }
-  initAdsGramSDK();
-  if (!adsgramController) {
-    throw new Error('AdsGram controller not ready');
-  }
   toast('Loading sponsor video from AdsGram...');
-  const res = await adsgramController.show();
-  if (res?.done) {
-    currentAdNetwork = 'adsgram';
-    await claimAdReward();
-    return true;
+
+  const blocksToTry = Array.from(new Set([
+    window.ADSGRAM_BLOCK_ID,
+    '60738',
+    '59239'
+  ].filter(Boolean)));
+
+  let lastError = null;
+  for (const blockId of blocksToTry) {
+    try {
+      const controller = window.Adsgram.init({ blockId: String(blockId) });
+      const res = await controller.show();
+      if (res?.done) {
+        currentAdNetwork = 'adsgram';
+        await claimAdReward();
+        return true;
+      }
+    } catch (err) {
+      console.warn(`[AdsGram] Block ${blockId} attempt failed:`, err);
+      lastError = err;
+    }
   }
-  throw new Error('AdsGram video ad not completed');
+
+  throw lastError || new Error('AdsGram video ad not completed');
 }
 
 function initMonetagInApp() {
@@ -2491,17 +2503,20 @@ const hasLiveAds = () => Boolean(
 );
 
 const AD_PROVIDERS = [
-  // Tier 1: Confirmed Active & Approved (Ranked Loop: 1. Monetag -> 2. Adsterra -> 3. Adexium -> 4. GigaPub -> 5. AdsGram)
-  { id: 'monetag', name: 'Monetag', play: playMonetagAd, rank: 1, defaultActive: true },
+  // Primary Priority: Rank 1 (RichAds)
+  { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 1, defaultActive: true },
+  // Secondary Priority: Rank 2 (Adsterra)
   { id: 'adsterra', name: 'Adsterra', play: playAdsterraAd, rank: 2, defaultActive: true },
-  { id: 'adexium', name: 'Adexium', play: playAdexiumAd, rank: 3, defaultActive: true },
-  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd, rank: 4, defaultActive: true },
-  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd, rank: 5, defaultActive: true },
 
-  // Tier 2: Pending Networks (Auto-probe & auto-join upon serving)
-  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 6, defaultActive: false },
-  { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 7, defaultActive: false },
-  { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 8, defaultActive: false }
+  // Tier 3: Secondary Approved Networks (Monetag -> Adexium -> GigaPub -> AdsGram)
+  { id: 'monetag', name: 'Monetag', play: playMonetagAd, rank: 3, defaultActive: true },
+  { id: 'adexium', name: 'Adexium', play: playAdexiumAd, rank: 4, defaultActive: true },
+  { id: 'gigapub', name: 'GigaPub', play: playGigaPubAd, rank: 5, defaultActive: true },
+  { id: 'adsgram', name: 'AdsGram', play: playAdsGramAd, rank: 6, defaultActive: true },
+
+  // Tier 4: Pending Networks (Auto-probe & auto-join upon serving)
+  { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 7, defaultActive: false },
+  { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 8, defaultActive: false }
 ];
 
 function getAutoApprovedSet() {
@@ -2511,12 +2526,14 @@ function getAutoApprovedSet() {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr) && arr.length > 0) {
         const s = new Set(arr);
+        s.add('richads');
+        s.add('adsterra');
         s.add('gigapub');
         return s;
       }
     }
   } catch {}
-  return new Set(['monetag', 'adsterra', 'adexium', 'gigapub', 'adsgram']);
+  return new Set(['richads', 'adsterra', 'monetag', 'adexium', 'gigapub', 'adsgram']);
 }
 
 function syncApprovedNetworks(serverApprovedList) {
@@ -2637,37 +2654,44 @@ async function openAdPlayer() {
 
   const { activeList, pendingList } = getActiveRotationList();
 
-  // Round-robin index across the active list (1. Monetag -> 2. Adsterra -> 3. Adexium -> Newly approved):
-  let rotIdx = 0;
-  try {
-    const saved = localStorage.getItem('ms_active_rot_idx');
-    rotIdx = saved !== null ? parseInt(saved, 10) : 0;
-    if (isNaN(rotIdx) || rotIdx < 0 || rotIdx >= activeList.length) rotIdx = 0;
-  } catch {
-    rotIdx = 0;
+  // Strict operator ranking:
+  // Rank 1: RichAds (always primary waterfall priority)
+  // Rank 2: Adsterra (always secondary waterfall priority)
+  // Followed by secondary approved networks: Monetag, Adexium, GigaPub, AdsGram
+  const primaryProvider = activeList.find(p => p.id === 'richads') || activeList[0];
+  const secondaryProvider = activeList.find(p => p.id === 'adsterra');
+  const others = activeList.filter(p => p.id !== primaryProvider?.id && p.id !== secondaryProvider?.id);
+
+  // Fair rotation among secondary tier if both #1 and #2 pass:
+  let otherRotIdx = 0;
+  if (others.length > 0) {
+    try {
+      const saved = localStorage.getItem('ms_other_rot_idx');
+      otherRotIdx = saved !== null ? parseInt(saved, 10) : 0;
+      if (isNaN(otherRotIdx) || otherRotIdx < 0 || otherRotIdx >= others.length) otherRotIdx = 0;
+    } catch {
+      otherRotIdx = 0;
+    }
+    const nextOtherIdx = (otherRotIdx + 1) % others.length;
+    try {
+      localStorage.setItem('ms_other_rot_idx', String(nextOtherIdx));
+    } catch {}
   }
 
-  // Shift index for next turn:
-  const nextRotIdx = (rotIdx + 1) % activeList.length;
-  try {
-    localStorage.setItem('ms_active_rot_idx', String(nextRotIdx));
-  } catch {}
+  const rotatedOthers = others.length > 0
+    ? [...others.slice(otherRotIdx), ...others.slice(0, otherRotIdx)]
+    : [];
 
-  // Construct active rotated providers:
-  const rotatedActive = [
-    ...activeList.slice(rotIdx),
-    ...activeList.slice(0, rotIdx)
-  ];
+  const rankedWaterfall = [
+    primaryProvider,
+    secondaryProvider,
+    ...rotatedOthers
+  ].filter(Boolean);
 
-  // Auto-Discovery Probe System:
-  // Every cycle through activeList (when rotIdx === 0) AND there are pending networks:
-  // Probe the next pending network (AdsGram -> OnClickA -> Adsun -> GigaPub -> TADS -> RichAds)
-  // at the very front of the waterfall!
-  // If the pending network is ready and completes an ad, it automatically permanently joins the active loop.
-  // If it has no fill yet, the catch immediately falls back to rotatedActive[0] with zero user delay!
+  // Auto-Discovery Probe System for standby networks (OnClickA, Adsun):
   let fullWaterfall;
   let probeTarget = null;
-  if (pendingList.length > 0 && rotIdx === 0) {
+  if (pendingList.length > 0) {
     let probeIdx = 0;
     try {
       const savedProbe = localStorage.getItem('ms_pending_probe_idx');
@@ -2682,13 +2706,12 @@ async function openAdPlayer() {
     } catch {}
 
     const remainingPending = pendingList.filter(p => p.id !== probeTarget.id);
-    fullWaterfall = [probeTarget, ...rotatedActive, ...remainingPending];
-    console.log(`[AdRotation] 🔍 Auto-Discovery Probe Turn: Testing pending candidate "${probeTarget.name}" (${probeTarget.id}) first...`);
+    fullWaterfall = [...rankedWaterfall, probeTarget, ...remainingPending];
   } else {
-    fullWaterfall = [...rotatedActive, ...pendingList];
+    fullWaterfall = rankedWaterfall;
   }
 
-  console.log(`[AdRotation] Priority turn: #${rotIdx + 1} (${fullWaterfall[0]?.name}). Active loop: ${activeList.map(p => p.name).join(' -> ')}`);
+  console.log(`[AdRotation] Waterfall Priority: #1 ${rankedWaterfall[0]?.name} -> #2 ${rankedWaterfall[1]?.name} -> Others: ${rotatedOthers.map(p => p.name).join(' -> ')}`);
 
   for (const provider of fullWaterfall) {
     try {
