@@ -588,7 +588,7 @@ async function handleTelegramWebhook(request, env) {
       }
       const unlocked = refCount >= 10 || hasWithdrawn;
       const adminBlock = isAdmin
-        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars & pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star holders\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
+        ? `\n👑 <b>Administrator Controls:</b>\n• <code>/settle_friday</code> - Settle all active stars at 3 ⭐ = 1¢ ($0.01 USDT)\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT/Star (e.g. /rate 0.003333)\n• <code>/settle &lt;revenue&gt;</code> - Settle pool with ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars & Friday conversion\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star holders\n• <code>/payouts</code> - View pending manual payout requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to player\n• <code>/set_email &lt;email&gt;</code> - Set withdrawal alert email\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID\n• <code>/remove_ad &lt;network&gt;</code> - Disable ad network`
         : `\n💡 <b>Tip:</b> Invite 10 friends to unlock your 1st withdrawal permanently! Send <code>/claim_admin</code> if you are the project owner.`;
 
       await sendTelegramMessage(env.BOT_TOKEN, {
@@ -615,7 +615,7 @@ async function handleTelegramWebhook(request, env) {
           .bind(String(chatId), now()).run();
         await sendTelegramMessage(env.BOT_TOKEN, {
           chatId,
-          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.02)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star earners\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID`
+          text: `👑 <b>Admin Rights Granted!</b>\n\nYou are now confirmed as the platform administrator.\n\n🛠 <b>Available Commands:</b>\n• <code>/settle_friday</code> - Settle all active stars at 3 ⭐ = 1¢ ($0.01 USDT)\n• <code>/rate &lt;val&gt;</code> - Settle with custom USDT per Star (e.g. /rate 0.003333)\n• <code>/settle &lt;revenue_usdt&gt;</code> - Settle week with total ad revenue\n• <code>/set_income &lt;amount&gt;</code> - Set previous week total income (e.g. /set_income 150)\n• <code>/settle_preview</code> - Check current stars and pool size\n• <code>/audit_stars</code> - Verify database consistency\n• <code>/top_stars</code> - View top star earners\n• <code>/payouts</code> - Check pending withdrawal requests\n• <code>/payout_complete &lt;id&gt; &lt;tx_hash&gt;</code> - Confirm manual transfer\n• <code>/payout_reject &lt;id&gt; &lt;reason&gt;</code> - Reject & refund to user\n• <code>/set_email &lt;email&gt;</code> - Set alert email for new requests\n• <code>/ads_status</code> or <code>/networks</code> - Live status of 9 ad networks & active loop\n• <code>/approve_network &lt;network&gt;</code> - Force-approve network into active rotation\n• <code>/set_ad &lt;network&gt; &lt;val&gt;</code> - Configure ad network ID`
         });
       } else {
         await sendTelegramMessage(env.BOT_TOKEN, {
@@ -726,9 +726,16 @@ async function handleTelegramWebhook(request, env) {
         }).join('\n');
       }
 
+      let confRate = 0.00333333;
+      try {
+        const confSetting = await env.DB.prepare('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"').first();
+        if (confSetting?.value && !isNaN(Number(confSetting.value))) confRate = Number(confSetting.value);
+      } catch {}
+      const confPayout = (stars * confRate).toFixed(4);
+
       await sendTelegramMessage(env.BOT_TOKEN, {
         chatId,
-        text: `📊 <b>Friday Community Star Audit (${escapeHtml(weekId)})</b>\n\n• <b>Active Weekly Stars:</b> <b>${stars} ⭐</b>\n• <b>Eligible Players:</b> <b>${eligibleCount}</b>\n• <b>Verified Ad Impressions:</b> ${impressionsCount}\n\n💡 <b>Simulated Conversions:</b>\n• At <b>$0.01</b> / ⭐ → Total Payout: <b>$${(stars * 0.01).toFixed(2)} USDT</b>\n• At <b>$0.02</b> / ⭐ → Total Payout: <b>$${(stars * 0.02).toFixed(2)} USDT</b>\n• At <b>$0.03</b> / ⭐ → Total Payout: <b>$${(stars * 0.03).toFixed(2)} USDT</b>\n• At <b>$0.05</b> / ⭐ → Total Payout: <b>$${(stars * 0.05).toFixed(2)} USDT</b>${topText}\n\n👉 <b>To execute conversion & vanish stars:</b>\nSend <code>/rate &lt;rate&gt;</code> (for example: <code>/rate 0.02</code>)`
+        text: `📊 <b>Friday Community Star Audit (${escapeHtml(weekId)})</b>\n\n• <b>Active Weekly Stars:</b> <b>${stars} ⭐</b>\n• <b>Eligible Players:</b> <b>${eligibleCount}</b>\n• <b>Verified Ad Impressions:</b> ${impressionsCount}\n\n🎯 <b>CONFIGURED FRIDAY RATE:</b>\n⭐ <b>3 Stars = 1¢ ($0.01 USDT)</b>\n• Rate per Star: <code>$${confRate.toFixed(6)} USDT</code>\n• Total Community Payout: <b>$${confPayout} USDT</b> across ${eligibleCount} players${topText}\n\n👉 <b>To execute conversion at 3 ⭐ = 1¢:</b>\nSend <code>/settle_friday</code>\n\n👉 <b>Or custom rate:</b> Send <code>/rate &lt;rate&gt;</code>`
       });
       return json({ ok: true });
     }
@@ -792,12 +799,13 @@ async function handleTelegramWebhook(request, env) {
       return json({ ok: true });
     }
 
-    // 6. /rate, /settle_rate, or /settle command
+    // 6. /rate, /settle_rate, /settle, or /settle_friday command
+    const isSettleFriday = text === '/settle_friday' || text === '/settle_now';
     const rateDirectMatch = text.match(/^\/rate(?:\s+([\d.]+))?$/);
     const settleRateMatch = text.match(/^\/settle_rate(?:\s+([\d.]+))?$/);
     const settleRevMatch = text.match(/^\/settle(?:\s+([\d.]+))?$/);
 
-    if (rateDirectMatch || settleRateMatch || settleRevMatch) {
+    if (isSettleFriday || rateDirectMatch || settleRateMatch || settleRevMatch) {
       const isAdmin = await isAuthorizedAdmin(chatId, env);
       if (!isAdmin) {
         await sendTelegramMessage(env.BOT_TOKEN, {
@@ -807,11 +815,16 @@ async function handleTelegramWebhook(request, env) {
         return json({ ok: true });
       }
 
-      // If user sent /rate or /settle_rate without number, explain format
-      if ((rateDirectMatch && !rateDirectMatch[1]) || (settleRateMatch && !settleRateMatch[1])) {
+      // If user sent /rate or /settle_rate without number, explain format and offer /settle_friday
+      if (!isSettleFriday && ((rateDirectMatch && !rateDirectMatch[1]) || (settleRateMatch && !settleRateMatch[1]))) {
+        let confRate = 0.00333333;
+        try {
+          const confSetting = await env.DB.prepare('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"').first();
+          if (confSetting?.value && !isNaN(Number(confSetting.value))) confRate = Number(confSetting.value);
+        } catch {}
         await sendTelegramMessage(env.BOT_TOKEN, {
           chatId,
-          text: `💡 <b>How to Settle with Rate:</b>\nSend <code>/rate &lt;rate_per_star&gt;</code> (for example: <code>/rate 0.02</code>) to convert all stars into withdrawable USDT for your players at that rate. Active stars will vanish and USDT will be credited to their balances!`
+          text: `💡 <b>Friday Settlement Rate:</b>\n• Configured Rate: <b>3 ⭐ = 1¢ ($0.01 USDT)</b> (<code>$${confRate.toFixed(6)} / ⭐</code>)\n\n👉 <b>To convert all active stars at 3 ⭐ = 1¢:</b>\nSend <code>/settle_friday</code>\n\n👉 <b>Or specify a custom rate:</b>\nSend <code>/rate &lt;rate_per_star&gt;</code> (for example: <code>/rate 0.005</code>)`
         });
         return json({ ok: true });
       }
@@ -845,7 +858,16 @@ async function handleTelegramWebhook(request, env) {
       let communityPool = 0.0;
       let totalRevenue = 0.0;
 
-      if (rateDirectMatch && rateDirectMatch[1]) {
+      if (isSettleFriday) {
+        let confRate = 0.00333333;
+        try {
+          const confSetting = await env.DB.prepare('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"').first();
+          if (confSetting?.value && !isNaN(Number(confSetting.value))) confRate = Number(confSetting.value);
+        } catch {}
+        valuePerStar = confRate;
+        communityPool = Number((totalStars * valuePerStar).toFixed(6));
+        totalRevenue = Number((communityPool * 2).toFixed(6));
+      } else if (rateDirectMatch && rateDirectMatch[1]) {
         valuePerStar = Math.max(0, Number(rateDirectMatch[1]));
         communityPool = Number((totalStars * valuePerStar).toFixed(6));
         totalRevenue = Number((communityPool * 2).toFixed(6));
@@ -1531,14 +1553,15 @@ async function route(request, env) {
         }
       };
 
-      const [player, pool, ads24h, past, activeStarsRow, prevIncomeSetting, lastSettled] = await Promise.all([
+      const [player, pool, ads24h, past, activeStarsRow, prevIncomeSetting, lastSettled, confRateSetting] = await Promise.all([
         env.DB.prepare('SELECT stars, weekly_stars, usdt_balance, last_ad_at, payout_wallet FROM players WHERE id=?').bind(uid).first(),
         env.DB.prepare('SELECT total_stars, total_revenue_usdt, community_pool_usdt, value_per_star, status FROM weekly_pools WHERE week_id=?').bind(weekId).first(),
         env.DB.prepare('SELECT COUNT(*) AS count FROM ad_impressions WHERE player_id=? AND completed_at>=?').bind(uid, now() - DAY).first(),
         env.DB.prepare('SELECT week_id AS weekId, total_stars AS totalStars, total_revenue_usdt AS totalRevenueUsdt, community_pool_usdt AS communityPoolUsdt, value_per_star AS valuePerStar, settled_at AS settledAt FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 3').all().catch(() => ({ results: [] })),
         getActiveStars(),
         getFirstSafe('SELECT value FROM system_settings WHERE key="previous_week_income"'),
-        getFirstSafe('SELECT week_id, total_revenue_usdt, community_pool_usdt, value_per_star, settled_at FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 1')
+        getFirstSafe('SELECT week_id, total_revenue_usdt, community_pool_usdt, value_per_star, settled_at FROM weekly_pools WHERE status="settled" ORDER BY settled_at DESC LIMIT 1'),
+        getFirstSafe('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"')
       ]);
 
       const communityTotalStars = Math.max(Number(pool?.total_stars || 0), Number(activeStarsRow?.totalActiveStars || 0));
@@ -1559,10 +1582,13 @@ async function route(request, env) {
       }
 
       const communityPoolUsdt = pool?.community_pool_usdt || 0.0;
-      const valuePerStar = calcStarValue(communityPoolUsdt, communityTotalStars);
+      const confRateVal = confRateSetting && !isNaN(Number(confRateSetting.value)) ? Number(confRateSetting.value) : null;
+      const valuePerStar = confRateVal !== null ? confRateVal : calcStarValue(communityPoolUsdt, communityTotalStars);
       const userWeeklyStars = player?.weekly_stars || 0;
       const userTotalStars = player?.stars || 0;
-      const userEstimatedShareUsdt = calcUserShare(userWeeklyStars, valuePerStar);
+      const userEstimatedShareUsdt = confRateVal !== null
+        ? Number((userWeeklyStars * confRateVal).toFixed(4))
+        : calcUserShare(userWeeklyStars, valuePerStar);
       const userUsdtBalance = player?.usdt_balance || 0.0;
       const adsWatchedToday = ads24h?.count || 0;
       const cooldownRemaining = Math.max(0, 60 - (now() - (player?.last_ad_at || 0)));
@@ -1574,6 +1600,7 @@ async function route(request, env) {
         communityTotalStars,
         communityPoolUsdt,
         estimatedValuePerStar: valuePerStar,
+        rateRule: confRateVal !== null ? '3 Stars = 1¢ ($0.01 USDT)' : null,
         previousWeekIncomeUsdt,
         previousWeekPoolUsdt,
         previousWeekRate,
@@ -2187,7 +2214,13 @@ export async function handleFridayReminder(env) {
     if (!poolRow || poolRow.status === 'settled') return;
     const totalStars = poolRow.total_stars || 0;
     const communityPool = Number(poolRow.community_pool_usdt || 0.0);
-    const estRate = totalStars > 0 ? (communityPool / totalStars).toFixed(4) : '0.0000';
+    
+    let confRate = 0.00333333; // Default 3 stars = 1 cent
+    try {
+      const confSetting = await env.DB.prepare('SELECT value FROM system_settings WHERE key="settlement_rate_per_star"').first();
+      if (confSetting?.value && !isNaN(Number(confSetting.value))) confRate = Number(confSetting.value);
+    } catch {}
+    const confPayout = (totalStars * confRate).toFixed(4);
 
     // REMINDER ONLY: Star-to-USDT conversion requires explicit admin confirmation
     let adminId = env.ADMIN_TELEGRAM_ID;
@@ -2201,7 +2234,7 @@ export async function handleFridayReminder(env) {
     if (adminId && env.BOT_TOKEN) {
       await sendTelegramMessage(env.BOT_TOKEN, {
         chatId: adminId,
-        text: `⏰ <b>Weekly Star Settlement Reminder</b>\n\n• <b>Round:</b> <code>${escapeHtml(weekId)}</code>\n• <b>Total Community Stars:</b> <code>${totalStars} ⭐</code>\n• <b>Accumulated Pool (50%):</b> <code>$${communityPool.toFixed(2)} USDT</code>\n• <b>Estimated Rate:</b> <code>$${estRate} USDT / Star</code>\n\n💬 <b>To convert stars into withdrawable USDT:</b>\n• Send <code>/rate 0.02</code> (or whatever rate you choose)\n• Or send <code>/settle &lt;ad_revenue_usdt&gt;</code>\n• Or open the Mini App Admin Settlement Console.`
+        text: `⏰ <b>Friday Weekly Star Settlement Reminder</b>\n\n• <b>Round:</b> <code>${escapeHtml(weekId)}</code>\n• <b>Total Community Stars:</b> <code>${totalStars} ⭐</code>\n• <b>Configured Rate:</b> <b>3 ⭐ = 1¢ ($0.01 USDT)</b> (<code>$${confRate.toFixed(6)} / ⭐</code>)\n• <b>Total Community Payout:</b> <code>$${confPayout} USDT</code>\n\n💬 <b>To convert stars into withdrawable USDT:</b>\n• Send <code>/settle_friday</code> (executes at 3 ⭐ = 1¢)\n• Or send <code>/rate &lt;custom_rate&gt;</code> (e.g. /rate 0.005)\n• Or open the Mini App Admin Settlement Console.`
       }).catch(err => console.error('[Reminder Alert send failed]:', err));
     }
     console.log(`[Friday Reminder Sent] Week ${weekId}: ${totalStars} stars awaiting manual admin confirmation.`);
