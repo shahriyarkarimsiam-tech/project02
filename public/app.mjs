@@ -2233,7 +2233,7 @@ async function playGigaPubAd() {
       }
     }, 8000);
 
-    Promise.resolve(showFn())
+    Promise.resolve(showFn('main'))
       .then(async (res) => {
         if (!resolved) {
           resolved = true;
