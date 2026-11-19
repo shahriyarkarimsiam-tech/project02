@@ -1729,7 +1729,6 @@ const SPONSORS = [
   { network: 'onclicka', icon: '⚡', title: 'OnClickA Traffic', tag: 'ONCLICKA PERFORMANCE', desc: 'High-conversion advertising platform powering fast-growing Telegram gaming bots and apps.' },
   { network: 'richads', icon: '💎', title: 'RichAds Global', tag: 'RICHADS PREMIUM', desc: 'Scale user acquisition with top-tier verified push, pop and interstitial ad campaigns worldwide.' },
   { network: 'telega', icon: '✈️', title: 'Telega.io Ads', tag: 'TELEGA.IO SPONSOR', desc: 'Premier marketplace for Telegram channels and bot advertisements with verified audience reach.' },
-  { network: 'tads', icon: '🎯', title: 'TADS Telegram Network', tag: 'TADS ENGINE', desc: 'Next-generation ad delivery system engineered specifically for Telegram Mini App games.' },
   { network: 'adexium', icon: '🌐', title: 'Adexium Exchange', tag: 'ADEXIUM DECENTRALIZED', desc: 'Decentralized digital ad platform connecting web3 publishers with transparent brand sponsors.' },
   { network: 'gigapub', icon: '🚀', title: 'GigaPub Media', tag: 'GIGAPUB PARTNER', desc: 'Performance monetization technology maximizing ad yields for high-engagement arcade games.' },
   { network: 'adsun', icon: '☀️', title: 'Adsun Platform', tag: 'ADSUN ADVERTISING', desc: 'Targeted in-app sponsored campaigns with instant conversion tracking and user rewards.' },
@@ -2048,91 +2047,7 @@ async function playRichAdsVideo() {
   });
 }
 
-function initTadsSDK() {
-  const widgetId = Number(window.TADS_WIDGET_ID || '13243');
-  if (window.tads && typeof window.tads.init === 'function') {
-    try {
-      window.tads.init({
-        widgetId,
-        type: 'static',
-        debug: false
-      });
-      console.log('[TADS] Static banner initialized (ID: ' + widgetId + ')');
-    } catch (e) {
-      console.warn('[TADS] init notice:', e);
-    }
-  }
-}
-
-async function playTadsAd() {
-  const widgetId = Number(window.TADS_WIDGET_ID || '13243');
-  toast('Loading sponsor ad from TADS...');
-  return new Promise((resolve, reject) => {
-    if (!window.tads) {
-      return reject(new Error('TADS SDK not available'));
-    }
-    let resolved = false;
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        reject(new Error('TADS ad load timeout'));
-      }
-    }, 7000);
-
-    try {
-      if (typeof window.tads.renderTadsWidget === 'function') {
-        window.tads.renderTadsWidget({
-          id: widgetId,
-          type: 'fullscreen',
-          onShowReward: async () => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timer);
-              currentAdNetwork = 'tads';
-              await claimAdReward();
-              resolve(true);
-            }
-          },
-          onAdsNotFound: () => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timer);
-              reject(new Error('TADS no fill available'));
-            }
-          }
-        });
-      } else if (typeof window.tads.init === 'function') {
-        window.tads.init({
-          widgetId,
-          type: 'fullscreen',
-          onShowReward: async () => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timer);
-              currentAdNetwork = 'tads';
-              await claimAdReward();
-              resolve(true);
-            }
-          },
-          onAdsNotFound: () => {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timer);
-              reject(new Error('TADS no fill available'));
-            }
-          }
-        });
-      } else {
-        clearTimeout(timer);
-        reject(new Error('TADS display method not available'));
-      }
-    } catch (err) {
-      clearTimeout(timer);
-      console.warn('[TADS] presentation error:', err);
-      reject(err);
-    }
-  });
-}
+// TADS network disabled and removed by operator request
 
 let adexiumWidget = null;
 
@@ -2568,7 +2483,6 @@ const hasLiveAds = () => Boolean(
   window.MONETAG_ZONE_ID ||
   window.ONCLICKA_SPOT_ID ||
   window.RICHADS_VAST_URL ||
-  window.TADS_WIDGET_ID ||
   window.ADEXIUM_WID ||
   window.GIGAPUB_APP_ID ||
   window.ADSUN_BLOCK_ID ||
@@ -2587,8 +2501,7 @@ const AD_PROVIDERS = [
   // Tier 2: Pending Networks (Auto-probe & auto-join upon serving)
   { id: 'onclicka', name: 'OnClickA', play: playOnClickAAd, rank: 6, defaultActive: false },
   { id: 'adsun', name: 'Adsun', play: playAdsunAd, rank: 7, defaultActive: false },
-  { id: 'tads', name: 'TADS', play: playTadsAd, rank: 8, defaultActive: false },
-  { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 9, defaultActive: false }
+  { id: 'richads', name: 'RichAds', play: playRichAdsVideo, rank: 8, defaultActive: false }
 ];
 
 function getAutoApprovedSet() {
@@ -3351,7 +3264,6 @@ async function boot() {
       window.ONCLICKA_SPOT_ID = health.onclickaSpotId || '6155185';
       window.RICHADS_VAST_URL = health.richadsVastUrl || 'https://16793.rtb.adp3.net/pre-roll-rp?pubid=1028723&siteid=412421';
       window.RICHADS_PUB_ID = health.richadsPubId || '1028723';
-      window.TADS_WIDGET_ID = health.tadsWidgetId || '13243';
       window.ADEXIUM_WID = health.adexiumWid || '4672c32d-e0b9-41f8-976d-c7ccc51ac091';
       window.GIGAPUB_APP_ID = health.gigapubAppId || '9103';
       window.ADSUN_BLOCK_ID = health.adsunBlockId || '50194';
@@ -3360,7 +3272,6 @@ async function boot() {
       initMonetagInApp();
       initAdsGramSDK();
       initOnClickASDK();
-      initTadsSDK();
       initAdexiumSDK();
       initAdsunSDK();
     }
