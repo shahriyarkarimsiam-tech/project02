@@ -596,8 +596,8 @@ test('GET /api/admin/pool-summary returns live metrics to authorized admin', asy
   assert.equal(data.currentRatio, 0.01);
 });
 
-test('handleScheduled automatically settles weekly stars on Friday cron 59 23 * * 5', async () => {
-  const { handleScheduled } = await import('../src/worker.mjs');
+test('handleScheduled respects manual mode (no auto-settle) and executeFridaySettlement settles on demand', async () => {
+  const { handleScheduled, executeFridaySettlement } = await import('../src/worker.mjs');
   let batchRan = false;
   const mockDB = {
     prepare(query) {
@@ -635,9 +635,15 @@ test('handleScheduled automatically settles weekly stars on Friday cron 59 23 * 
     }
   };
 
+  // In manual mode, Friday scheduled cron does NOT batch settle:
   await handleScheduled({ cron: '59 23 * * 5' }, { DB: mockDB, ADMIN_TELEGRAM_ID: '9999' });
-  // Verify that batch settlement DID run:
-  assert.equal(batchRan, true);
+  assert.equal(batchRan, false, 'Friday cron must NOT auto-settle when in manual settlement mode');
+
+  // Manual settlement explicitly executes the conversion batch:
+  const res = await executeFridaySettlement({ DB: mockDB }, 0.00333333);
+  assert.equal(batchRan, true, 'Manual settlement must execute batch');
+  assert.equal(res.ok, true);
+  assert.equal(res.totalStars, 100);
 });
 
 test('handleScheduled dispatches 0 16 * * * cron to daily ad reminder broadcast', async () => {

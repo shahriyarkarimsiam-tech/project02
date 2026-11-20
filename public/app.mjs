@@ -2416,35 +2416,24 @@ async function refreshPoolData() {
   if ($('pool-community-usdt')) $('pool-community-usdt').textContent = prevIncomeStr;
   if ($('pool-community-stars')) $('pool-community-stars').textContent = num(poolData.communityTotalStars || 0);
 
+  const fixedRateRule = poolData.fixedRateText || poolData.rateRule || '3 ⭐ = 1¢ USDT';
+  const effectiveRate = Number(poolData.fixedRatePerStar || poolData.estimatedValuePerStar || 0.00333333);
+
   if ($('pool-star-value')) {
-    if (poolData.rateRule || (poolData.estimatedValuePerStar && poolData.estimatedValuePerStar > 0)) {
-      $('pool-star-value').textContent = '3 ⭐ = 1¢ USDT';
-      if ($('pool-star-value-sub')) $('pool-star-value-sub').textContent = `$${Number(poolData.estimatedValuePerStar || 0.0033).toFixed(4)} / ⭐ · Converts Friday`;
-    } else if (poolData.previousWeekRate && poolData.previousWeekRate > 0) {
-      $('pool-star-value').textContent = 'ANNOUNCED FRIDAY';
-      if ($('pool-star-value-sub')) $('pool-star-value-sub').textContent = `Last round: $${Number(poolData.previousWeekRate).toFixed(4)} / ⭐`;
-    } else {
-      $('pool-star-value').textContent = 'ANNOUNCED FRIDAY';
-      if ($('pool-star-value-sub')) $('pool-star-value-sub').textContent = 'Rate announced by Admin around Friday';
-    }
+    $('pool-star-value').textContent = fixedRateRule;
+    if ($('pool-star-value-sub')) $('pool-star-value-sub').textContent = `$${effectiveRate.toFixed(4)} / ⭐ · Manual Settlement by Admin`;
   }
 
   if ($('pool-user-weekly-stars')) $('pool-user-weekly-stars').textContent = num(player.weeklyStars || 0);
   if ($('pool-user-total-stars')) $('pool-user-total-stars').textContent = num(player.stars || 0);
 
   if ($('pool-user-share-usdt')) {
-    if (player.weeklyStars > 0 && poolData.estimatedValuePerStar > 0) {
-      $('pool-user-share-usdt').textContent = `$${Number(player.weeklyStars * poolData.estimatedValuePerStar).toFixed(4)} USDT`;
-      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = `Converts Friday (3 ⭐ = 1¢)`;
-    } else if (player.weeklyStars > 0 && poolData.previousWeekRate > 0) {
-      $('pool-user-share-usdt').textContent = `~$${Number(player.weeklyStars * poolData.previousWeekRate).toFixed(2)}`;
-      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = `Est. from last rate ($${Number(poolData.previousWeekRate).toFixed(4)})`;
-    } else if (player.weeklyStars > 0) {
-      $('pool-user-share-usdt').textContent = 'CONVERTS FRIDAY';
-      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = 'All active stars convert to USDT';
+    if (player.weeklyStars > 0) {
+      $('pool-user-share-usdt').textContent = `$${Number(player.weeklyStars * effectiveRate).toFixed(4)} USDT`;
+      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = `Fixed rate (${fixedRateRule}) · Manual Settlement`;
     } else {
       $('pool-user-share-usdt').textContent = '0 Stars';
-      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = 'Watch ads to earn stars';
+      if ($('pool-user-share-sub')) $('pool-user-share-sub').textContent = `1 ad = 1 ⭐ · Converts at ${fixedRateRule}`;
     }
   }
 
